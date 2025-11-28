@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <title>BankFuture Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --sidebar-width: 280px;
+      --primary: #000;
+      --bg: #f8f9fa;
+      --border: #e9ecef;
+      --text: #212529;
+      --text-muted: #868e96;
+      --active-bg: #e9ecef;
+      --danger: #fa5252;
+    }
+
+    * {
+      box-sizing: border-box;
+      outline: none;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #fff;
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    aside {
+      width: var(--sidebar-width);
+      background: #fff;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 20px 0;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    .nav-item {
+      padding: 12px 24px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-item:hover {
+      color: var(--primary);
+      background: #f8f9fa;
+    }
+
+    .nav-item.active {
+      color: var(--primary);
+      background: #f1f3f5;
+      border-right: 3px solid var(--primary);
+    }
+
+    /* Main Content */
+    main {
+      flex: 1;
+      background: #fff;
+      overflow-y: auto;
+      padding: 40px 60px;
+    }
+
+    h1,
+    h2 {
+      margin-top: 0;
+    }
+
+    h2 {
+      font-size: 24px;
+      margin-bottom: 30px;
+      font-weight: 600;
+    }
+
+    /* Sections */
+    .section-view {
+      display: none;
+    }
+
+    .section-view.active {
+      display: block;
+    }
+
+    /* Forms & Inputs */
+    label {
+      display: block;
+      font-weight: 500;
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #495057;
+    }
+
+    input[type="text"],
+    textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      margin-bottom: 20px;
+      transition: border-color 0.2s;
+    }
+
+    input[type="text"]:focus,
+    textarea:focus {
+      border-color: #000;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    /* Buttons */
+    button {
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s;
+    }
+
+    button.primary {
+      background: #000;
+      color: white;
+    }
+
+    button.primary:hover {
+      background: #333;
+    }
+
+    button.secondary {
+      background: #f1f3f5;
+      color: var(--text);
+    }
+
+    button.secondary:hover {
+      background: #e9ecef;
+    }
+
+    button.danger {
+      background: #fff0f0;
+      color: var(--danger);
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    button.danger:hover {
+      background: #ffe3e3;
+    }
+
+    /* Tables (Users) */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th {
+      text-align: left;
+      padding: 12px;
+      border-bottom: 2px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tr:hover td {
+      background: #f8f9fa;
+    }
+
+    /* Context Groups */
+    .context-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+      background: #fff;
+    }
+
+    .context-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .cmd-badge {
+      background: #f1f3f5;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: 600;
+    }
+
+    /* Modal */
+    #dialogue-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 999;
+      display: none;
+    }
+
+    #dialogue {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80%;
+      max-width: 600px;
+      max-height: 80vh;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+    }
+
+    #messages-container {
+      flex: 1;
+      overflow-y: auto;
+      margin: 20px 0;
+    }
+
+    .msg {
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .msg.user {
+      background: #e7f5ff;
+      margin-left: 20%;
+      text-align: right;
+    }
+
+    .msg.assistant {
+      background: #f8f9fa;
+      margin-right: 20%;
+      border: 1px solid #dee2e6;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Sidebar -->
+  <aside>
+    <div class="nav-item active" onclick="nav('brain')">МОЗГ</div>
+    <div class="nav-item" onclick="nav('pfp_process')">ОБРАБОТКА ПФП</div>
+    <div class="nav-item" onclick="nav('pfp_create')">СОЗДАНИЕ ПФП JSON</div>
+    <div class="nav-item" onclick="nav('pfp_work')">РАБОТА С ПФП</div>
+    <div class="nav-item" onclick="nav('diagnostics')">ДИАГНОСТИКА</div>
+    <div class="nav-item" onclick="nav('nsj')">НСЖ КОПИЛКА И КЕШБЭК</div>
+    <div class="nav-item" onclick="nav('nextplan')">NEXTPLAN</div>
+    <div class="nav-item" onclick="nav('lifeinsurance')">LIFEINSURANCE</div>
+    <div class="nav-item" onclick="nav('outbound')">ИСХОДЯЩИЕ СООБЩЕНИЯ</div>
+    <div style="flex:1"></div>
+    <div class="nav-item" onclick="nav('users')" style="border-top: 1px solid var(--border);">ПОЛЬЗОВАТЕЛИ</div>
+  </aside>
+
+  <!-- Main Content -->
+  <main>
+
+    <!-- 1. BRAIN (Global Context) -->
+    <div id="view-brain" class="section-view active">
+      <h2>🧠 Мозг (Глобальный контекст)</h2>
+      <p style="color: #868e96; margin-bottom: 20px;">Здесь задаются общие правила поведения ИИ, которые действуют во
+        всех диалогах.</p>
+      <textarea id="global-ctx" style="height: 300px;" placeholder="Ты — финансовый помощник..."></textarea>
+      <div style="text-align: right;">
+        <button class="primary" onclick="saveGlobalContext()">Сохранить</button>
+      </div>
+    </div>
+
+    <!-- 2. USERS -->
+    <div id="view-users" class="section-view">
+      <div style="display:flex; justify-content:space-between; margin-bottom: 20px;">
+        <h2>Пользователи</h2>
+        <button class="secondary" onclick="loadUsers()">Обновить</button>
+      </div>
+      <div id="users-list">Загрузка...</div>
+    </div>
+
+    <!-- 3. GENERIC COMMANDS VIEW (Shared by all other sections) -->
+    <div id="view-commands" class="section-view">
+      <h2 id="section-title">Команды</h2>
+
+      <!-- Existing Commands List -->
+      <div id="contexts-container"></div>
+
+      <!-- Add New Command -->
+      <div style="margin-top: 60px;">
+        <h3>Добавить</h3>
+        <label>Название</label>
+        <input type="text" id="new-cmd-key" placeholder="Введите название команды (например /promo)">
+
+        <label>Контекст (Router)</label>
+        <textarea id="new-cmd-classifier"
+          placeholder="Введите контекст для определения последующей команды..."></textarea>
+
+        <label>Контекст (Solver)</label>
+        <textarea id="new-cmd-response" placeholder="Введите контекст для второго ИИ..."></textarea>
+
+        <div style="text-align: right;">
+          <button class="primary" onclick="addNewCommand()">Сохранить</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Modal -->
+  <div id="dialogue-overlay" onclick="closeDialogue()"></div>
+  <div id="dialogue">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h3 id="dialogue-title" style="margin:0">Диалог</h3>
+      <button class="secondary" onclick="closeDialogue()">✕</button>
+    </div>
+    <div id="messages-container"></div>
+  </div>
+
+  <script>
+    // --- Navigation Logic ---
+    let currentSection = 'brain';
+
+    function nav(section) {
+      // Update Sidebar UI
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      // Hide all views
+      document.querySelectorAll('.section-view').forEach(el => el.classList.remove('active'));
+
+      // Show specific view
+      if (section === 'brain') {
+        document.getElementById('view-brain').classList.add('active');
+        loadContextsUI(); // Refresh global ctx
+      } else if (section === 'users') {
+        document.getElementById('view-users').classList.add('active');
+        loadUsers();
+      } else {
+        // Generic Commands View
+        document.getElementById('view-commands').classList.add('active');
+
+        // Update Title based on section
+        const titles = {
+          'pfp_process': 'Обработка ПФП',
+          'pfp_create': 'Создание ПФП JSON',
+          'pfp_work': 'Работа с ПФП',
+          'diagnostics': 'Диагностика',
+          'nsj': 'НСЖ Копилка и Кешбэк',
+          'nextplan': 'NextPlan',
+          'lifeinsurance': 'LifeInsurance',
+          'outbound': 'Исходящие сообщения'
+        };
+        document.getElementById('section-title').innerText = titles[section] || section;
+
+        // Load commands (currently loads ALL commands, user will organize later)
+        loadContextsUI();
+      }
+      currentSection = section;
+    }
+
+    // --- API Helpers ---
+    async function apiFetch(url, options = {}) {
+      const separator = url.includes('?') ? '&' : '?';
+      const finalUrl = url + separator + 't=' + Date.now();
+      const res = await fetch(finalUrl, options);
+      if (res.status === 401) { alert('Unauthorized'); throw new Error('Unauthorized'); }
+      return res.json();
+    }
+
+    // --- Users ---
+    async function loadUsers() {
+      const container = document.getElementById('users-list');
+      try {
+        const users = await apiFetch('/api/admin/users');
+        if (!users.length) { container.innerHTML = 'Нет пользователей'; return; }
+        let html = '<table><thead><tr><th>ID</th><th>Ник</th><th>Регистрация</th><th>Последнее</th><th></th></tr></thead><tbody>';
+        users.forEach(u => {
+          html += `<tr>
+            <td>${u.user_id}</td>
+            <td>${u.nickname || '-'}</td>
+            <td>${new Date(u.registration_date).toLocaleDateString()}</td>
+            <td>${new Date(u.last_message_date).toLocaleTimeString()}</td>
+            <td style="text-align:right;"><button class="secondary" style="padding:4px 8px; font-size:12px;" onclick="loadDialogue('${u.user_id}', '${u.nickname}')">Диалог</button></td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (e) { container.innerHTML = 'Ошибка: ' + e.message; }
+    }
+
+    async function loadDialogue(userId, nickname) {
+      document.getElementById('dialogue-overlay').style.display = 'block';
+      document.getElementById('dialogue').style.display = 'flex';
+      document.getElementById('dialogue-title').innerText = nickname;
+      const container = document.getElementById('messages-container');
+      container.innerHTML = 'Загрузка...';
+      const msgs = await apiFetch(`/api/admin/users/${userId}/messages`);
+      container.innerHTML = msgs.map(m => `
+        <div class="msg ${m.role}">
+          <strong>${m.role === 'user' ? 'Пользователь' : 'Бот'}</strong>: ${m.content}
+        </div>
+      `).join('');
+      setTimeout(() => container.scrollTop = container.scrollHeight, 50);
+    }
+
+    function closeDialogue() {
+      document.getElementById('dialogue-overlay').style.display = 'none';
+      document.getElementById('dialogue').style.display = 'none';
+    }
+
+    // --- Contexts ---
+    async function loadContextsUI() {
+      try {
+        const data = await apiFetch('/api/admin/context');
+
+        // Update Global
+        const globalEl = document.getElementById('global-ctx');
+        if (globalEl) globalEl.value = data.baseBrainContext || '';
+
+        // Update Commands List (only if in commands view)
+        const container = document.getElementById('contexts-container');
+        if (container) {
+          const commands = data.contexts || {};
+          let html = '';
+          let count = 0;
+
+          for (const [cmd, ctx] of Object.entries(commands)) {
+            // Filter by section
+            // If command has no section (legacy), treat as 'general'.
+            // Only show if matches currentSection.
+            const cmdSection = ctx.section || 'general';
+            if (cmdSection !== currentSection) continue;
+
+            count++;
+            const safeId = btoa(cmd).replace(/=/g, '');
+            html += `
+              <div class="context-card">
+                <div class="context-header">
+                  <span class="cmd-badge">${cmd}</span>
+                  <div style="display:flex; gap:10px;">
+                      <button class="secondary" onclick="saveExistingCommand('${cmd}', 'clf-${safeId}', 'res-${safeId}')">Сохранить</button>
+                      <button class="danger" onclick="deleteCommand('${cmd}')">Удалить</button>
+                  </div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                  <label style="font-size:12px; color:#868e96;">ROUTER (КЛАССИФИКАТОР)</label>
+                  <textarea id="clf-${safeId}" style="margin-bottom:0; height:80px;">${ctx.classifier || ''}</textarea>
+                </div>
+                <div>
+                  <label style="font-size:12px; color:#868e96;">SOLVER (ОТВЕТ)</label>
+                  <textarea id="res-${safeId}" style="margin-bottom:0; height:80px;">${ctx.response || ''}</textarea>
+                </div>
+              </div>
+            `;
+          }
+
+          if (count === 0) {
+            html = '<p style="color:#868e96">Нет команд в этом разделе</p>';
+          }
+          container.innerHTML = html;
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    async function saveContext(key, type, value, section = null) {
+      const body = { key, value, type };
+      if (section) body.section = section;
+
+      const res = await fetch('/api/admin/context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      return res.json();
+    }
+
+    async function saveGlobalContext() {
+      const val = document.getElementById('global-ctx').value;
+      const res = await saveContext('baseBrainContext', null, val);
+      if (res.success) alert('Сохранено'); else alert('Ошибка');
+    }
+
+    async function saveExistingCommand(cmd, clfId, resId) {
+      const clf = document.getElementById(clfId).value;
+      const resVal = document.getElementById(resId).value;
+      await saveContext(cmd, 'classifier', clf);
+      await saveContext(cmd, 'response', resVal);
+      alert('Сохранено');
+    }
+
+    async function addNewCommand() {
+      const key = document.getElementById('new-cmd-key').value;
+      const clf = document.getElementById('new-cmd-classifier').value;
+      const resVal = document.getElementById('new-cmd-response').value;
+      if (!key) return alert('Введите название');
+
+      // Pass currentSection
+      await saveContext(key, 'classifier', clf, currentSection);
+      await saveContext(key, 'response', resVal, currentSection);
+
+      alert('Добавлено');
+      document.getElementById('new-cmd-key').value = '';
+      document.getElementById('new-cmd-classifier').value = '';
+      document.getElementById('new-cmd-response').value = '';
+      loadContextsUI();
+    }
+
+    async function deleteCommand(cmd) {
+      if (!confirm('Вы уверены, что хотите удалить команду ' + cmd + '?')) return;
+
+      try {
+        const res = await fetch('/api/admin/context/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: cmd })
+        });
+        const result = await res.json();
+        if (result.success) {
+          // alert('Удалено');
+          loadContextsUI();
+        } else {
+          alert('Ошибка удаления: ' + result.error);
+        }
+      } catch (e) {
+        alert('Ошибка сети: ' + e.message);
+      }
+    }
+
+    // Init
+    loadContextsUI();
+  </script>
+</body>
+
+</html>
