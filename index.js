@@ -1,6 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const cors = require('cors');
+
 const { updateContext, loadContexts, migrateFromJSON, deleteContext } = require('./context');
 const { initDB } = require('./db');
 const { ensureUser, touchUser, addMessage, listUsers, getUserMessages } = require('./user');
@@ -14,14 +16,25 @@ const basicAuth = require('./basicAuth');
 
 require('./telegram'); // Запускаем Telegram‑бота
 
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
+app.use(cors({
+  origin: [
+    'https://bank-future-front.vercel.app',
+    'http://localhost:5173',
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
 // ---------- Защищаем админ‑часть ----------
-app.use('/admin', basicAuth);               // статические файлы UI
-app.use('/api/admin', basicAuth);           // REST‑эндпоинты
+app.use('/admin', basicAuth);
+app.use('/api/admin', basicAuth);
+
 
 // ---------- Статические файлы ----------
 app.use('/admin', express.static(path.join(__dirname, 'public')));
