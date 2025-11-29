@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -9,32 +10,24 @@ const { ensureUser, touchUser, addMessage, listUsers, getUserMessages } = requir
 const basicAuth = require('./basicAuth');
 
 // Инициализация БД и миграция
-; (async () => {
+;(async () => {
   await initDB();
   await migrateFromJSON();
 })();
 
 require('./telegram'); // Запускаем Telegram‑бота
 
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-app.use(cors({
-  origin: [
-    'https://bank-future-front.vercel.app',
-    'http://localhost:5173',
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+// CORS: пока разрешаем всем (можно сузить позже)
+app.use(cors());
 
 // ---------- Защищаем админ‑часть ----------
-app.use('/admin', basicAuth);
-app.use('/api/admin', basicAuth);
-
+app.use('/admin', basicAuth);        // статические файлы UI
+app.use('/api/admin', basicAuth);   // REST‑эндпоинты
 
 // ---------- Статические файлы ----------
 app.use('/admin', express.static(path.join(__dirname, 'public')));
@@ -64,18 +57,6 @@ app.post('/api/admin/context', async (req, res) => {
   } catch (err) {
     console.error('POST /api/admin/context error', err);
     res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-
-  if (!key || !value) {
-    return res.status(400).json({ error: 'Missing key or value' });
-  }
-  const success = await updateContext(key, value, type, section);
-  if (success) {
-    res.json({ success: true, message: 'Context updated successfully' });
-  } else {
-    res.status(500).json({ error: 'Failed to update context' });
   }
 });
 
