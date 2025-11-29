@@ -12,7 +12,7 @@ const basicAuth = require('./basicAuth');
 // Инициализация БД и миграция
 ;(async () => {
   await initDB();
-  await migrateFromJSON();
+ // await migrateFromJSON(); // миграцию вызываем только вручную при необходимости
 })();
 
 require('./telegram'); // Запускаем Telegram‑бота
