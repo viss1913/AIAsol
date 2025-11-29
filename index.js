@@ -46,7 +46,22 @@ app.get('/api/admin/context', async (req, res) => {
 });
 
 app.post('/api/admin/context', async (req, res) => {
-  const { key, value, type, section } = req.body;
+  const { key, response, classifier, section } = req.body;
+  const value = response; // что сохраняем как текст ответа
+  const type = classifier; // если нужно хранить классификатор
+
+  if (!key || !value) {
+    return res.status(400).json({ error: 'Missing key or value' });
+  }
+
+  const success = await updateContext(key, value, type, section);
+  if (success) {
+    res.json({ success: true, message: 'Context updated successfully' });
+  } else {
+    res.status(500).json({ error: 'Failed to update context' });
+  }
+});
+
   if (!key || !value) {
     return res.status(400).json({ error: 'Missing key or value' });
   }
