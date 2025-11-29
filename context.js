@@ -28,7 +28,8 @@ async function migrateFromJSON() {
       let count = 0;
       for (const [cmd, ctx] of Object.entries(data.contexts)) {
         await pool.query(
-          'INSERT INTO ai_commands (command, classifier, response, section) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE classifier = VALUES(classifier), response = VALUES(response), section = VALUES(section)',
+          'INSERT INTO ai_commands (command, classifier, response, section) VALUES (?, ?, ?, ?) ' +
+          'ON DUPLICATE KEY UPDATE classifier = VALUES(classifier), response = VALUES(response), section = VALUES(section)',
           [cmd, ctx.classifier || '', ctx.response || '', ctx.section || 'general']
         );
         count++;
@@ -44,16 +45,19 @@ async function migrateFromJSON() {
 
 async function loadContexts() {
   try {
-    const [globals] = await pool.query('SELECT value FROM ai_globals WHERE `key` = ?', ['baseBrainContext']);
+    const [globals] = await pool.query(
+      'SELECT value FROM ai_globals WHERE `key` = ?',
+      ['baseBrainContext']
+    );
     const baseBrainContext = globals[0]?.value || '';
 
     const [commands] = await pool.query('SELECT * FROM ai_commands');
     const contexts = {};
-    commands.forEach(row => {
+    commands.forEach((row) => {
       contexts[row.command] = {
         classifier: row.classifier,
         response: row.response,
-        section: row.section || 'general'
+        section: row.section || 'general',
       };
     });
 
@@ -64,34 +68,26 @@ async function loadContexts() {
   }
 }
 
-async function updateContext(key, value, type = null, section = null) {
+async function updateContext(key, { classifier, response, section } = {}) {
   try {
     if (key === 'baseBrainContext') {
       await pool.query(
         'INSERT INTO ai_globals (`key`, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)',
-        ['baseBrainContext', value]
+        ['baseBrainContext', response || '']
       );
     } else {
-      // Ensure row exists
+      const sec = section || 'general';
+      const cls = classifier || '';
+      const resp = response || '';
+
       await pool.query(
-        'INSERT IGNORE INTO ai_commands (command, classifier, response, section) VALUES (?, "", "", ?)',
-        [key, section || 'general']
+        'INSERT INTO ai_commands (command, classifier, response, section) VALUES (?, ?, ?, ?) ' +
+        'ON DUPLICATE KEY UPDATE classifier = VALUES(classifier), response = VALUES(response), section = VALUES(section)',
+        [key, cls, resp, sec]
       );
-
-      if (type === 'classifier') {
-        await pool.query('UPDATE ai_commands SET classifier = ? WHERE command = ?', [value, key]);
-      } else if (type === 'response') {
-        await pool.query('UPDATE ai_commands SET response = ? WHERE command = ?', [value, key]);
-      }
-
-      // If section is explicitly provided, update it (useful for moving commands or ensuring correct section on create)
-      if (section) {
-        await pool.query('UPDATE ai_commands SET section = ? WHERE command = ?', [section, key]);
-      }
     }
 
-
-    // --- Sync to contexts.json ---
+    // --- Опциональный синк в contexts.json ---
     try {
       const filePath = path.join(__dirname, 'contexts.json');
       if (fs.existsSync(filePath)) {
@@ -99,16 +95,27 @@ async function updateContext(key, value, type = null, section = null) {
         const jsonData = JSON.parse(jsonRaw);
 
         if (key === 'baseBrainContext') {
-          jsonData.baseBrainContext = value;
+          jsonData.baseBrainContext = response || '';
         } else {
           if (!jsonData.contexts) jsonData.contexts = {};
           if (!jsonData.contexts[key]) {
-            jsonData.contexts[key] = { classifier: '', response: '', section: section || 'general' };
+            jsonData.contexts[key] = {
+              classifier: '',
+              response: '',
+              section: section || 'general',
+            };
           }
-          if (type === 'classifier') jsonData.contexts[key].classifier = value;
-          if (type === 'response') jsonData.contexts[key].response = value;
-          if (section) jsonData.contexts[key].section = section;
+          if (classifier !== undefined) {
+            jsonData.contexts[key].classifier = classifier || '';
+          }
+          if (response !== undefined) {
+            jsonData.contexts[key].response = response || '';
+          }
+          if (section) {
+            jsonData.contexts[key].section = section;
+          }
         }
+
         fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2));
       }
     } catch (fsErr) {
@@ -135,9 +142,15 @@ async function deleteContext(command) {
 
 async function getClassifierContext(command) {
   try {
-    let [rows] = await pool.query('SELECT classifier FROM ai_commands WHERE command = ?', [command]);
+    let [rows] = await pool.query(
+      'SELECT classifier FROM ai_commands WHERE command = ?',
+      [command]
+    );
     if (rows.length === 0) {
-      [rows] = await pool.query('SELECT classifier FROM ai_commands WHERE command = ?', ['/start']);
+      [rows] = await pool.query(
+        'SELECT classifier FROM ai_commands WHERE command = ?',
+        ['/start']
+      );
     }
     return rows[0]?.classifier || '';
   } catch (err) {
@@ -148,12 +161,21 @@ async function getClassifierContext(command) {
 
 async function getResponseContext(command) {
   try {
-    const [globals] = await pool.query('SELECT value FROM ai_globals WHERE `key` = ?', ['baseBrainContext']);
+    const [globals] = await pool.query(
+      'SELECT value FROM ai_globals WHERE `key` = ?',
+      ['baseBrainContext']
+    );
     const baseContext = globals[0]?.value || '';
 
-    let [cmdRes] = await pool.query('SELECT response FROM ai_commands WHERE command = ?', [command]);
+    let [cmdRes] = await pool.query(
+      'SELECT response FROM ai_commands WHERE command = ?',
+      [command]
+    );
     if (cmdRes.length === 0) {
-      [cmdRes] = await pool.query('SELECT response FROM ai_commands WHERE command = ?', ['/start']);
+      [cmdRes] = await pool.query(
+        'SELECT response FROM ai_commands WHERE command = ?',
+        ['/start']
+      );
     }
     const commandResponse = cmdRes[0]?.response || '';
 
