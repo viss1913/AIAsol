@@ -28,8 +28,8 @@ async function migrateFromJSON() {
       let count = 0;
       for (const [cmd, ctx] of Object.entries(data.contexts)) {
         await pool.query(
-          'INSERT INTO ai_commands (command, classifier, response) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE classifier = VALUES(classifier), response = VALUES(response)',
-          [cmd, ctx.classifier || '', ctx.response || '']
+          'INSERT INTO ai_commands (command, classifier, response, section) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE classifier = VALUES(classifier), response = VALUES(response), section = VALUES(section)',
+          [cmd, ctx.classifier || '', ctx.response || '', ctx.section || 'general']
         );
         count++;
       }

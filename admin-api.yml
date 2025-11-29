@@ -1,0 +1,191 @@
+openapi: 3.0.0
+info:
+  title: BankFuture Admin API
+  description: API for managing AI contexts and viewing user history for the BankFuture bot.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api/admin
+    description: Local Development Server
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+security:
+  - basicAuth: []
+
+paths:
+  /context:
+    get:
+      summary: Retrieve all AI contexts
+      description: Returns the global base context and all command-specific contexts.
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baseBrainContext:
+                    type: string
+                    description: The global system prompt for the AI.
+                  contexts:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        classifier:
+                          type: string
+                          description: Context for the intent classifier.
+                        response:
+                          type: string
+                          description: Context for the response generator.
+                        section:
+                          type: string
+                          description: The UI section this command belongs to.
+    post:
+      summary: Create or Update a Context
+      description: Updates the global context or a specific command's context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+                - value
+              properties:
+                key:
+                  type: string
+                  description: The command name (e.g., '/start') or 'baseBrainContext'.
+                value:
+                  type: string
+                  description: The new content for the context.
+                type:
+                  type: string
+                  enum: [classifier, response]
+                  description: Required if key is a command. Specifies which part of the command context to update.
+                section:
+                  type: string
+                  description: Optional section name for grouping commands in the UI.
+            examples:
+              updateGlobal:
+                summary: Update Global Context
+                value:
+                  key: "baseBrainContext"
+                  value: "You are a helpful assistant."
+              updateCommand:
+                summary: Update Command Context
+                value:
+                  key: "/start"
+                  value: "Start message..."
+                  type: "response"
+                  section: "onboarding"
+      responses:
+        '200':
+          description: Context updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Missing required fields
+        '500':
+          description: Server error
+
+  /context/delete:
+    post:
+      summary: Delete a Context
+      description: Removes a command context from the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+              properties:
+                key:
+                  type: string
+                  description: The command to delete (e.g., '/start').
+      responses:
+        '200':
+          description: Context deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Missing key
+        '500':
+          description: Server error
+
+  /users:
+    get:
+      summary: List all users
+      description: Retrieves a list of all users who have interacted with the bot.
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    user_id:
+                      type: string
+                    nickname:
+                      type: string
+                    registration_date:
+                      type: string
+                      format: date-time
+                    last_message_date:
+                      type: string
+                      format: date-time
+
+  /users/{id}/messages:
+    get:
+      summary: Get User Messages
+      description: Retrieves the chat history for a specific user.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: The User ID
+      responses:
+        '200':
+          description: Chat history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    role:
+                      type: string
+                      enum: [user, assistant]
+                    content:
+                      type: string
+                    created_at:
+                      type: string
+                      format: date-time
