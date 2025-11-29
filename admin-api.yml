@@ -102,6 +102,39 @@ paths:
         '500':
           description: Server error
 
+  /context/brain:
+    put:
+      summary: Update Base Brain Context
+      description: Updates the global system prompt (brain) for the AI.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - baseBrainContext
+              properties:
+                baseBrainContext:
+                  type: string
+                  description: The new text for the system prompt.
+      responses:
+        '200':
+          description: Base brain context updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Missing or invalid baseBrainContext
+        '500':
+          description: Server error
+
   /context/delete:
     post:
       summary: Delete a Context

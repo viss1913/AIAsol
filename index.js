@@ -45,6 +45,19 @@ app.post('/api/admin/context', async (req, res) => {
   }
 });
 
+app.put('/api/admin/context/brain', async (req, res) => {
+  const { baseBrainContext } = req.body;
+  if (typeof baseBrainContext !== 'string') {
+    return res.status(400).json({ error: 'Missing or invalid baseBrainContext' });
+  }
+  const success = await updateContext('baseBrainContext', baseBrainContext);
+  if (success) {
+    res.json({ success: true, message: 'Base brain context updated' });
+  } else {
+    res.status(500).json({ error: 'Failed to update base brain context' });
+  }
+});
+
 app.post('/api/admin/context/delete', async (req, res) => {
   const { key } = req.body;
   if (!key) {

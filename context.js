@@ -89,6 +89,33 @@ async function updateContext(key, value, type = null, section = null) {
         await pool.query('UPDATE ai_commands SET section = ? WHERE command = ?', [section, key]);
       }
     }
+
+
+    // --- Sync to contexts.json ---
+    try {
+      const filePath = path.join(__dirname, 'contexts.json');
+      if (fs.existsSync(filePath)) {
+        const jsonRaw = fs.readFileSync(filePath, 'utf8');
+        const jsonData = JSON.parse(jsonRaw);
+
+        if (key === 'baseBrainContext') {
+          jsonData.baseBrainContext = value;
+        } else {
+          if (!jsonData.contexts) jsonData.contexts = {};
+          if (!jsonData.contexts[key]) {
+            jsonData.contexts[key] = { classifier: '', response: '', section: section || 'general' };
+          }
+          if (type === 'classifier') jsonData.contexts[key].classifier = value;
+          if (type === 'response') jsonData.contexts[key].response = value;
+          if (section) jsonData.contexts[key].section = section;
+        }
+        fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2));
+      }
+    } catch (fsErr) {
+      console.error('Error syncing to contexts.json:', fsErr);
+    }
+    // -----------------------------
+
     return true;
   } catch (err) {
     console.error('Error updating context:', err);
