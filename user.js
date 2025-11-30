@@ -60,10 +60,24 @@ async function getUserMessages(userId) {
     return rows;
 }
 
+/** Delete all messages for a specific user */
+async function deleteUserMessages(userId) {
+    try {
+        await pool.query(
+            `DELETE FROM messages WHERE user_id = ?`,
+            [String(userId)]
+        );
+        console.log(`✅ Deleted all messages for user ${userId}`);
+    } catch (e) {
+        console.error('deleteUserMessages error:', e);
+    }
+}
+
 module.exports = {
     ensureUser,
     touchUser,
     addMessage,
     listUsers,
     getUserMessages,
+    deleteUserMessages,
 };

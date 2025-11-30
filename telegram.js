@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { classifyIntent, askAI } = require('./ai');
 const { getClassifierContext, getResponseContext } = require('./context');
 const { pool } = require('./db');
-const { ensureUser, touchUser, addMessage } = require('./user'); // user helpers
+const { ensureUser, touchUser, addMessage, deleteUserMessages } = require('./user'); // user helpers
 
 // Основной бот
 const mainToken = process.env.TELEGRAM_TOKEN;
@@ -48,9 +48,14 @@ mainBot.on('message', async (msg) => {
     await addMessage(chatId, 'user', userMessage);
 
     if (userMessage === '/reset') {
+      // Удаляем сессию пользователя
       await pool.query('DELETE FROM sessions WHERE user_id = ?', [String(chatId)]);
-      mainBot.sendMessage(chatId, '🔄 Сессия сброшена! Начнём сначала. Чем могу помочь?');
-      if (controlChatId) await controlBot.sendMessage(controlChatId, `🔄 Сессия сброшена: ${userName} (${chatId})`);
+      // Удаляем все сообщения пользователя
+      await deleteUserMessages(chatId);
+
+      console.log(`[${chatId}] ✅ Reset completed: session and messages deleted`);
+      mainBot.sendMessage(chatId, '🔄 Вся история переписки удалена! Начнём сначала. Чем могу помочь?');
+      if (controlChatId) await controlBot.sendMessage(controlChatId, `🔄 Полный сброс: ${userName} (${chatId}) - сессия и история удалены`);
       return;
     }
 
