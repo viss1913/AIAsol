@@ -21,12 +21,12 @@ const {
 const basicAuth = require('./basicAuth');
 
 // Инициализация БД
-;(async () => {
+; (async () => {
   await initDB();
   // await migrateFromJSON(); // миграцию вызываем только вручную при необходимости
 })();
 
-require('./telegram'); // Запускаем Telegram‑бота
+const { sendMessageToUser, broadcastMessage } = require('./telegram'); // Запускаем Telegram‑бота и импортируем функции
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -119,6 +119,35 @@ app.get('/api/admin/users/:id/messages', async (req, res) => {
   const userId = req.params.id;
   const msgs = await getUserMessages(userId);
   res.json(msgs);
+});
+
+app.post('/api/admin/users/:id/send', async (req, res) => {
+  const userId = req.params.id;
+  const { message } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  const result = await sendMessageToUser(userId, message);
+  if (result.success) {
+    // Сохраняем исходящее сообщение в историю
+    await addMessage(userId, 'assistant', message);
+    res.json({ success: true, message: 'Message sent' });
+  } else {
+    res.status(500).json({ error: 'Failed to send message', details: result.error });
+  }
+});
+
+app.post('/api/admin/users/broadcast', async (req, res) => {
+  const { message } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  const result = await broadcastMessage(message);
+  res.json(result);
 });
 
 // ---------- Публичные эндпоинты ----------

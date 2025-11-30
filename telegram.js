@@ -101,4 +101,39 @@ mainBot.on('message', async (msg) => {
   }
 });
 
+// --- API Functions for Admin Panel ---
+
+async function sendMessageToUser(chatId, text) {
+  try {
+    await mainBot.sendMessage(chatId, text);
+    return { success: true };
+  } catch (error) {
+    console.error(`Failed to send message to ${chatId}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function broadcastMessage(text) {
+  const { listUsers } = require('./user'); // Lazy load to avoid potential circular deps if any
+  const users = await listUsers();
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const user of users) {
+    try {
+      await mainBot.sendMessage(user.user_id, text);
+      successCount++;
+    } catch (error) {
+      console.error(`Failed to send broadcast to ${user.user_id}:`, error.message);
+      failCount++;
+    }
+  }
+  return { success: true, total: users.length, sent: successCount, failed: failCount };
+}
+
 console.log('✅ Telegram Bot started with MySQL storage!');
+
+module.exports = {
+  sendMessageToUser,
+  broadcastMessage
+};

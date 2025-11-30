@@ -224,3 +224,78 @@ paths:
                     created_at:
                       type: string
                       format: date-time
+
+  /users/{id}/send:
+    post:
+      summary: Send Message to User
+      description: Sends a text message to a specific user via Telegram.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: The User ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: The text message to send.
+      responses:
+        '200':
+          description: Message sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Missing message
+        '500':
+          description: Failed to send message
+
+  /users/broadcast:
+    post:
+      summary: Broadcast Message
+      description: Sends a text message to ALL users in the database.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: The text message to broadcast.
+      responses:
+        '200':
+          description: Broadcast completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  total:
+                    type: integer
+                  sent:
+                    type: integer
+                  failed:
+                    type: integer
+        '400':
+          description: Missing message
