@@ -63,10 +63,19 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS users (
         user_id VARCHAR(255) PRIMARY KEY,
         nickname VARCHAR(255),
+        username VARCHAR(255),
         registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_message_date TIMESTAMP NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    // Migration: Add username column to users if it doesn't exist
+    try {
+      await connection.query(`SELECT username FROM users LIMIT 1;`);
+    } catch (e) {
+      console.log('⚠️ Column "username" missing in users. Adding it...');
+      await connection.query(`ALTER TABLE users ADD COLUMN username VARCHAR(255);`);
+    }
 
     // 5. Table for individual messages (dialog history)
     await connection.query(`

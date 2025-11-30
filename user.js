@@ -3,15 +3,16 @@ const { pool } = require('./db');
 
 /**
  * Insert a user if it does not exist yet.
- * nickname – Telegram nickname (first_name or username).
+ * nickname – Telegram nickname (first_name).
+ * username – Telegram handle (@username).
  */
-async function ensureUser(userId, nickname) {
+async function ensureUser(userId, nickname, username) {
     try {
         await pool.query(
-            `INSERT INTO users (user_id, nickname)
-       VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE nickname = VALUES(nickname)`,
-            [String(userId), nickname]
+            `INSERT INTO users (user_id, nickname, username)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE nickname = VALUES(nickname), username = VALUES(username)`,
+            [String(userId), nickname, username]
         );
     } catch (e) {
         console.error('ensureUser error:', e);
@@ -45,7 +46,7 @@ async function addMessage(userId, role, content) {
 /** Get list of all users */
 async function listUsers() {
     const [rows] = await pool.query(
-        `SELECT user_id, nickname, registration_date, last_message_date FROM users ORDER BY registration_date DESC`
+        `SELECT user_id, nickname, username, registration_date, last_message_date FROM users ORDER BY registration_date DESC`
     );
     return rows;
 }

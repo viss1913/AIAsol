@@ -186,6 +186,8 @@ paths:
                       type: string
                     nickname:
                       type: string
+                    username:
+                      type: string
                     registration_date:
                       type: string
                       format: date-time

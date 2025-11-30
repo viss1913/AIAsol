@@ -37,12 +37,13 @@ mainBot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const userMessage = msg.text;
   const userName = msg.from.first_name || 'Пользователь';
+  const userHandle = msg.from.username ? `@${msg.from.username}` : null;
 
-  console.log(`[${chatId}] ${userName}: ${userMessage}`);
+  console.log(`[${chatId}] ${userName} (${userHandle}): ${userMessage}`);
 
   try {
     // Register / update user info
-    await ensureUser(chatId, userName);
+    await ensureUser(chatId, userName, userHandle);
     await touchUser(chatId);
     await addMessage(chatId, 'user', userMessage);
 
