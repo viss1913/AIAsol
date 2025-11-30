@@ -24,9 +24,14 @@ const basicAuth = require('./basicAuth');
 const { initBots, startBot, stopBot, sendMessageToUser, broadcastMessage } = require('./telegram');
 
 ; (async () => {
-  await initDB();
-  await initBots();
-  // await migrateFromJSON(1); // Optional: migrate for default bot if needed
+  try {
+    await initDB();
+    await initBots();
+    // await migrateFromJSON(1); // Optional: migrate for default bot if needed
+  } catch (err) {
+    console.error('❌ Critical startup error:', err);
+    process.exit(1);
+  }
 })();
 
 const app = express();
