@@ -32,11 +32,11 @@ async function touchUser(userId) {
 }
 
 /** Store a single message (role = 'user' | 'assistant') */
-async function addMessage(userId, role, content) {
+async function addMessage(userId, role, content, botId = null) {
     try {
         await pool.query(
-            `INSERT INTO messages (user_id, role, content) VALUES (?, ?, ?)`,
-            [String(userId), role, content]
+            `INSERT INTO messages (user_id, role, content, bot_id) VALUES (?, ?, ?, ?)`,
+            [String(userId), role, content, botId]
         );
     } catch (e) {
         console.error('addMessage error:', e);
@@ -54,7 +54,11 @@ async function listUsers() {
 /** Get dialog (messages) for a specific user */
 async function getUserMessages(userId) {
     const [rows] = await pool.query(
-        `SELECT role, content, created_at FROM messages WHERE user_id = ? ORDER BY created_at ASC`,
+        `SELECT m.role, m.content, m.created_at, m.bot_id, b.name as bot_name 
+         FROM messages m 
+         LEFT JOIN bots b ON m.bot_id = b.id
+         WHERE m.user_id = ? 
+         ORDER BY m.created_at ASC`,
         [String(userId)]
     );
     return rows;

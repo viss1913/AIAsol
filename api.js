@@ -15,9 +15,15 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Helper: Get Default Bot ID
+async function getDefaultBotId() {
+    const [rows] = await pool.query('SELECT id FROM bots WHERE is_active = TRUE LIMIT 1');
+    return rows.length > 0 ? rows[0].id : null;
+}
+
 // Helper: Get Session from MySQL
-async function getSession(userId) {
-    const [rows] = await pool.query('SELECT * FROM sessions WHERE user_id = ?', [String(userId)]);
+async function getSession(userId, botId) {
+    const [rows] = await pool.query('SELECT * FROM sessions WHERE user_id = ? AND bot_id = ?', [String(userId), botId]);
     if (rows.length > 0) {
         return rows[0];
     }
@@ -25,12 +31,12 @@ async function getSession(userId) {
 }
 
 // Helper: Save Session to MySQL
-async function saveSession(userId, lastCommand, history) {
+async function saveSession(userId, botId, lastCommand, history) {
     await pool.query(
-        `INSERT INTO sessions (user_id, last_command, history)
-     VALUES (?, ?, ?)
+        `INSERT INTO sessions (user_id, bot_id, last_command, history)
+     VALUES (?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE last_command = VALUES(last_command), history = VALUES(history)`,
-        [String(userId), lastCommand, JSON.stringify(history)]
+        [String(userId), botId, lastCommand, JSON.stringify(history)]
     );
 }
 
@@ -60,29 +66,37 @@ app.get('/spec', (req, res) => {
 });
 
 app.post('/chat', async (req, res) => {
-    const { userId, message } = req.body;
+    let { userId, message, botId } = req.body;
     if (!userId || !message) {
         return res.status(400).json({ error: 'userId and message are required' });
     }
 
     try {
-        const session = await getSession(userId);
+        if (!botId) {
+            botId = await getDefaultBotId();
+            if (!botId) {
+                return res.status(400).json({ error: 'No active bots found' });
+            }
+        }
+
+        const session = await getSession(userId, botId);
         const lastCmd = session.last_command || '/start';
         let history = session.history || [];
         if (!Array.isArray(history)) history = [];
 
-        const classifierContext = await getClassifierContext(lastCmd);
+        const classifierContext = await getClassifierContext(botId, lastCmd);
         const newCommand = await classifyIntent(message, classifierContext);
-        const responseContext = await getResponseContext(newCommand);
-        const reply = await askAI(message, responseContext);
+        const responseContext = await getResponseContext(botId, newCommand);
+        const reply = await askAI(message, responseContext, history); // Pass history if needed, ai.js askAI supports it
 
         history.push({ role: 'user', content: message });
         history.push({ role: 'assistant', content: reply });
-        await saveSession(userId, newCommand, history);
+        await saveSession(userId, botId, newCommand, history);
 
         res.json({
             reply,
-            session: { lastCommand: newCommand, history }
+            session: { lastCommand: newCommand, history },
+            botId
         });
     } catch (err) {
         console.error('API error:', err);
