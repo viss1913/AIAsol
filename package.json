@@ -25,5 +25,8 @@
     "mysql2": "^3.15.3",
     "node-telegram-bot-api": "^0.66.0",
     "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
   }
 }
