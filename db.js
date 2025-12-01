@@ -2,7 +2,8 @@ require('dotenv').config();
 const mysql = require('mysql2/promise');
 
 // Create a connection pool
-const pool = mysql.createPool({
+// Create a connection pool
+const dbConfig = {
   host: process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
   user: process.env.DB_USER || process.env.MYSQLUSER || 'root',
   password: process.env.DB_PASSWORD || process.env.MYSQLPASSWORD,
@@ -11,7 +12,22 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
+};
+
+// Add SSL for non-localhost connections (often required for Railway/Cloud DBs)
+if (dbConfig.host !== 'localhost' && dbConfig.host !== '127.0.0.1') {
+  console.log('🔒 Enabling SSL for remote database connection');
+  dbConfig.ssl = {
+    rejectUnauthorized: false
+  };
+}
+
+console.log('🔌 Attempting DB connection with config:', {
+  ...dbConfig,
+  password: dbConfig.password ? '*****' : undefined
 });
+
+const pool = mysql.createPool(dbConfig);
 
 // Initialize database tables
 async function initDB() {
