@@ -2,11 +2,11 @@ require('dotenv').config();
 const mysql = require('mysql2/promise');
 
 const dbConfig = {
-  host: process.env.MYSQLHOST || 'localhost',
-  user: process.env.MYSQLUSER || 'root',
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
   password: process.env.MYSQLPASSWORD,
-  database: process.env.MYSQLDATABASE || 'bankfuture',
-  port: process.env.MYSQLPORT || 3306,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
@@ -17,10 +17,11 @@ if (dbConfig.host !== 'localhost' && dbConfig.host !== '127.0.0.1') {
   dbConfig.ssl = { rejectUnauthorized: false };
 }
 
-
-console.log('🔌 Attempting DB connection with config:', {
-  ...dbConfig,
-  password: dbConfig.password ? '*****' : undefined
+console.log('DB CONFIG:', {
+  host: dbConfig.host,
+  port: dbConfig.port,
+  user: dbConfig.user,
+  database: dbConfig.database
 });
 
 const pool = mysql.createPool(dbConfig);
