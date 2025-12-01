@@ -1,4 +1,8 @@
 require('dotenv').config();
+
+console.log('ENV MYSQLHOST:', process.env.MYSQLHOST);
+console.log('ENV MYSQLPORT:', process.env.MYSQLPORT); 
+
 const mysql = require('mysql2/promise');
 
 const dbConfig = {
