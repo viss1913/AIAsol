@@ -98,7 +98,14 @@ function startBot(botRow) {
         console.log(`[Bot #${botId}] [${chatId}] Current: ${currentCommand} → New: ${newCommand}`);
 
         if (controlBot && controlChatId) {
-          controlBot.sendMessage(controlChatId, `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (${chatId})\n💬 "${userMessage}"\n🔄 ${currentCommand} → ${newCommand}\n`);
+          const cleanChatId = controlChatId.trim();
+          const messageText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (${chatId})\n💬 "${userMessage}"\n🔄 ${currentCommand} → ${newCommand}\n`;
+
+          controlBot.sendMessage(cleanChatId, messageText)
+            .then(() => console.log(`[Control Bot] ✅ Notification sent to ${cleanChatId}`))
+            .catch((err) => console.error(`[Control Bot] ❌ Failed to send notification: ${err.message}`));
+        } else {
+          console.log(`[Control Bot] ⚠️ Skipped notification. Bot: ${!!controlBot}, ChatID: ${!!controlChatId}`);
         }
 
         const responseContext = await getResponseContext(botId, newCommand);
