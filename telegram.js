@@ -96,6 +96,9 @@ function startBot(botRow) {
         }
 
         const responseContext = await getResponseContext(botId, newCommand);
+        console.log(`[Bot #${botId}] [DEBUG] Response Context Length: ${responseContext.length}`);
+        console.log(`[Bot #${botId}] [DEBUG] Response Context Preview: ${responseContext.substring(0, 50)}...`);
+
         const reply = await askAI(userMessage, responseContext, history);
         console.log(`[Bot #${botId}] [${chatId}] Reply: ${reply}`);
 

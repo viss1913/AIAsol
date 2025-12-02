@@ -142,6 +142,10 @@ async function getResponseContext(botId, command) {
     }
     const commandResponse = cmdRes[0]?.response || '';
 
+    console.log(`[DEBUG] getResponseContext botId=${botId} command=${command}`);
+    console.log(`[DEBUG] Base Context Found: ${!!baseContext}, Length: ${baseContext.length}`);
+    console.log(`[DEBUG] Command Response Found: ${!!commandResponse}, Length: ${commandResponse.length}`);
+
     return `${baseContext}\n---\n${commandResponse}`;
   } catch (err) {
     console.error(`Error getting response context for bot ${botId}:`, err);
