@@ -10,6 +10,12 @@ const controlToken = process.env.CONTROL_BOT_TOKEN;
 const controlChatId = process.env.CONTROL_CHAT_ID;
 const controlBot = controlToken ? new TelegramBot(controlToken) : null;
 
+if (controlBot) {
+  console.log(`✅ Control Bot initialized. Target Chat ID: ${controlChatId || 'MISSING'}`);
+} else {
+  console.log('⚠️ Control Bot NOT initialized (Token missing).');
+}
+
 // Active Bots Map: botId -> TelegramBot instance
 const activeBots = new Map();
 
