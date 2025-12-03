@@ -122,7 +122,7 @@ async function getClassifierContext(botId, command) {
   }
 }
 
-async function getResponseContext(botId, command) {
+async function getResponseContext(botId, command, userId = null) {
   try {
     const [bots] = await pool.query(
       'SELECT base_brain_context FROM bots WHERE id = ?',
@@ -142,11 +142,28 @@ async function getResponseContext(botId, command) {
     }
     const commandResponse = cmdRes[0]?.response || '';
 
-    console.log(`[DEBUG] getResponseContext botId=${botId} command=${command}`);
+    // Get user context if userId is provided
+    let userContext = '';
+    if (userId) {
+      const [userRows] = await pool.query(
+        'SELECT user_context FROM users WHERE user_id = ?',
+        [String(userId)]
+      );
+      userContext = userRows[0]?.user_context || '';
+    }
+
+    console.log(`[DEBUG] getResponseContext botId=${botId} command=${command} userId=${userId}`);
     console.log(`[DEBUG] Base Context Found: ${!!baseContext}, Length: ${baseContext.length}`);
     console.log(`[DEBUG] Command Response Found: ${!!commandResponse}, Length: ${commandResponse.length}`);
+    console.log(`[DEBUG] User Context Found: ${!!userContext}, Length: ${userContext.length}`);
 
-    return `${baseContext}\n---\n${commandResponse}`;
+    // Assemble final context: baseContext + commandResponse + userContext
+    let finalContext = `${baseContext}\n---\n${commandResponse}`;
+    if (userContext) {
+      finalContext += `\n---\nКонтекст пользователя:\n${userContext}`;
+    }
+
+    return finalContext;
   } catch (err) {
     console.error(`Error getting response context for bot ${botId}:`, err);
     return '';

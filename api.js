@@ -86,7 +86,7 @@ app.post('/chat', async (req, res) => {
 
         const classifierContext = await getClassifierContext(botId, lastCmd);
         const newCommand = await classifyIntent(message, classifierContext);
-        const responseContext = await getResponseContext(botId, newCommand);
+        const responseContext = await getResponseContext(botId, newCommand, userId);
         const reply = await askAI(message, responseContext, history); // Pass history if needed, ai.js askAI supports it
 
         history.push({ role: 'user', content: message });

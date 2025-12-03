@@ -226,6 +226,7 @@ Credentials are set via environment variables:
     "user_id": "123456789",
     "nickname": "John Doe",
     "username": "johndoe",
+    "user_context": "Отдел Закупок. Руководитель - Баринов Виктор.",
     "registration_date": "2025-11-30T10:00:00.000Z",
     "last_message_date": "2025-12-01T09:30:00.000Z"
   }
@@ -235,6 +236,7 @@ Credentials are set via environment variables:
 **Notes:**
 - Users are global across all bots
 - `last_message_date` shows the most recent message from any bot
+- `user_context` contains personalized context for the user (can be null)
 
 ---
 
@@ -322,6 +324,75 @@ Credentials are set via environment variables:
 
 ---
 
+### 13. Get User Context
+**GET** `/api/admin/users/:id/context`
+
+**Parameters:**
+- `:id` - User ID (Telegram user ID)
+
+**Response:**
+```json
+{
+  "userId": "123456789",
+  "userContext": "Отдел Закупок. Руководитель - Баринов Виктор. Виктор поставил задачу Людмиле что нужно подготовить план закупок на 2-й квартал"
+}
+```
+
+**Notes:**
+- Returns empty string if user has no context set
+- User context is global across all bots
+
+---
+
+### 14. Set/Update User Context
+**PUT** `/api/admin/users/:id/context`
+
+**Parameters:**
+- `:id` - User ID (Telegram user ID)
+
+**Request Body:**
+```json
+{
+  "userContext": "Отдел Закупок. Руководитель - Баринов Виктор. Виктор поставил задачу Людмиле что нужно подготовить план закупок на 2-й квартал"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User context updated"
+}
+```
+
+**Notes:**
+- Creates or updates user context
+- Context is added to AI prompts automatically
+- Context appears in the format: "Контекст пользователя: [userContext]"
+- Empty string clears the context
+
+---
+
+### 15. Delete User Context
+**DELETE** `/api/admin/users/:id/context`
+
+**Parameters:**
+- `:id` - User ID (Telegram user ID)
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User context deleted"
+}
+```
+
+**Notes:**
+- Sets user_context to NULL in database
+- AI will no longer receive user-specific context for this user
+
+---
+
 ## 🔧 Database Schema
 
 ### Tables
@@ -357,6 +428,7 @@ CREATE TABLE users (
   user_id VARCHAR(255) PRIMARY KEY,
   nickname VARCHAR(255),
   username VARCHAR(255),
+  user_context TEXT,
   registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_message_date TIMESTAMP NULL
 );

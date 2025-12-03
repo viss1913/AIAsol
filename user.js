@@ -46,9 +46,53 @@ async function addMessage(userId, role, content, botId = null) {
 /** Get list of all users */
 async function listUsers() {
     const [rows] = await pool.query(
-        `SELECT user_id, nickname, username, registration_date, last_message_date FROM users ORDER BY registration_date DESC`
+        `SELECT user_id, nickname, username, user_context, registration_date, last_message_date FROM users ORDER BY registration_date DESC`
     );
     return rows;
+}
+
+/** Get user context */
+async function getUserContext(userId) {
+    try {
+        const [rows] = await pool.query(
+            `SELECT user_context FROM users WHERE user_id = ?`,
+            [String(userId)]
+        );
+        return rows[0]?.user_context || '';
+    } catch (e) {
+        console.error('getUserContext error:', e);
+        return '';
+    }
+}
+
+/** Set/Update user context */
+async function setUserContext(userId, context) {
+    try {
+        await pool.query(
+            `UPDATE users SET user_context = ? WHERE user_id = ?`,
+            [context, String(userId)]
+        );
+        console.log(`✅ User context updated for user ${userId}`);
+        return true;
+    } catch (e) {
+        console.error('setUserContext error:', e);
+        return false;
+    }
+}
+
+/** Delete user context */
+async function deleteUserContext(userId) {
+    try {
+        await pool.query(
+            `UPDATE users SET user_context = NULL WHERE user_id = ?`,
+            [String(userId)]
+        );
+        console.log(`✅ User context deleted for user ${userId}`);
+        return true;
+    } catch (e) {
+        console.error('deleteUserContext error:', e);
+        return false;
+    }
 }
 
 /** Get dialog (messages) for a specific user */
@@ -84,4 +128,7 @@ module.exports = {
     listUsers,
     getUserMessages,
     deleteUserMessages,
+    getUserContext,
+    setUserContext,
+    deleteUserContext,
 };

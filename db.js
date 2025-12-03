@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 console.log('ENV MYSQLHOST:', process.env.MYSQLHOST);
-console.log('ENV MYSQLPORT:', process.env.MYSQLPORT); 
+console.log('ENV MYSQLPORT:', process.env.MYSQLPORT);
 
 const mysql = require('mysql2/promise');
 
@@ -143,10 +143,20 @@ async function initDB() {
         user_id VARCHAR(255) PRIMARY KEY,
         nickname VARCHAR(255),
         username VARCHAR(255),
+        user_context TEXT,
         registration_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_message_date TIMESTAMP NULL
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    // Migration for users: Add user_context if missing
+    try {
+      await connection.query('SELECT user_context FROM users LIMIT 1');
+    } catch (e) {
+      console.log('⚠️ Column "user_context" missing in users. Adding...');
+      await connection.query('ALTER TABLE users ADD COLUMN user_context TEXT AFTER username');
+      console.log('✅ users table updated with user_context field.');
+    }
 
     // 5. Table for individual messages
     await connection.query(`

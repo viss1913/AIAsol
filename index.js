@@ -17,6 +17,9 @@ const {
   addMessage,
   listUsers,
   getUserMessages,
+  getUserContext,
+  setUserContext,
+  deleteUserContext,
 } = require('./user');
 const basicAuth = require('./basicAuth');
 
@@ -248,6 +251,58 @@ app.post('/api/admin/users/broadcast', async (req, res) => {
 
   const result = await broadcastMessage(message, botId);
   res.json(result);
+});
+
+// ---------- User Context Management ----------
+
+// Get user context
+app.get('/api/admin/users/:id/context', async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const context = await getUserContext(userId);
+    res.json({ userId, userContext: context });
+  } catch (err) {
+    console.error('GET /api/admin/users/:id/context error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Set/Update user context
+app.put('/api/admin/users/:id/context', async (req, res) => {
+  const userId = req.params.id;
+  const { userContext } = req.body;
+
+  if (typeof userContext !== 'string') {
+    return res.status(400).json({ error: 'userContext must be a string' });
+  }
+
+  try {
+    const success = await setUserContext(userId, userContext);
+    if (success) {
+      res.json({ success: true, message: 'User context updated' });
+    } else {
+      res.status(500).json({ error: 'Failed to update user context' });
+    }
+  } catch (err) {
+    console.error('PUT /api/admin/users/:id/context error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Delete user context
+app.delete('/api/admin/users/:id/context', async (req, res) => {
+  const userId = req.params.id;
+  try {
+    const success = await deleteUserContext(userId);
+    if (success) {
+      res.json({ success: true, message: 'User context deleted' });
+    } else {
+      res.status(500).json({ error: 'Failed to delete user context' });
+    }
+  } catch (err) {
+    console.error('DELETE /api/admin/users/:id/context error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ---------- Публичные эндпоинты ----------

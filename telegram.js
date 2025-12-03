@@ -108,7 +108,7 @@ function startBot(botRow) {
           console.log(`[Control Bot] ⚠️ Skipped notification. Bot: ${!!controlBot}, ChatID: ${!!controlChatId}`);
         }
 
-        const responseContext = await getResponseContext(botId, newCommand);
+        const responseContext = await getResponseContext(botId, newCommand, chatId);
         console.log(`[Bot #${botId}] [DEBUG] Response Context Length: ${responseContext.length}`);
         console.log(`[Bot #${botId}] [DEBUG] Response Context Preview: ${responseContext.substring(0, 50)}...`);
 
