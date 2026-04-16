@@ -47,6 +47,11 @@ function startBot(botRow) {
   const token = botRow.token;
   const botName = botRow.name;
 
+  if (!token) {
+    console.log(`ℹ️ Skipping Telegram start for bot #${botId} (${botName}): token is empty (API-only bot).`);
+    return false;
+  }
+
   console.log(`🤖 Starting bot #${botId} (${botName})...`);
 
   try {
@@ -161,7 +166,7 @@ async function stopBot(botId) {
 
 async function initBots() {
   console.log('🔄 Initializing bots from DB...');
-  const [rows] = await pool.query('SELECT * FROM bots WHERE is_active = TRUE');
+  const [rows] = await pool.query('SELECT * FROM bots WHERE is_active = TRUE AND token IS NOT NULL AND token <> ""');
   for (const botRow of rows) {
     startBot(botRow);
   }

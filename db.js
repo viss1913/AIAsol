@@ -41,12 +41,32 @@ async function initDB() {
       CREATE TABLE IF NOT EXISTS bots (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
-        token VARCHAR(255) NOT NULL UNIQUE,
+        token VARCHAR(255) NULL,
+        api_key VARCHAR(255) NULL,
         base_brain_context TEXT,
         is_active BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_bots_token (token),
+        UNIQUE KEY uniq_bots_api_key (api_key)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
+
+    // Migration for bots: Add api_key column if missing
+    try {
+      await connection.query('SELECT api_key FROM bots LIMIT 1');
+    } catch (e) {
+      console.log('⚠️ Column "api_key" missing in bots. Adding...');
+      await connection.query('ALTER TABLE bots ADD COLUMN api_key VARCHAR(255) NULL AFTER token');
+      await connection.query('ALTER TABLE bots ADD UNIQUE KEY uniq_bots_api_key (api_key)');
+      console.log('✅ bots table updated with api_key field.');
+    }
+
+    // Migration for bots: token should be nullable for API-only bots
+    try {
+      await connection.query('ALTER TABLE bots MODIFY COLUMN token VARCHAR(255) NULL');
+    } catch (e) {
+      console.log('⚠️ Could not alter bots.token to nullable:', e.message);
+    }
 
     // Check if we need to insert the default bot from .env
     const [bots] = await connection.query('SELECT * FROM bots');
