@@ -190,8 +190,15 @@ app.get('/api/admin/context', async (req, res) => {
   const botId = req.query.botId;
   if (!botId) return res.status(400).json({ error: 'botId is required' });
 
-  const data = await loadContexts(botId);
-  res.json(data);
+  try {
+    const data = await loadContexts(botId);
+    const [botRows] = await pool.query('SELECT api_key FROM bots WHERE id = ? LIMIT 1', [botId]);
+    const apiKey = botRows.length > 0 ? botRows[0].api_key : null;
+    res.json({ ...data, apiKey });
+  } catch (err) {
+    console.error('GET /api/admin/context error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/admin/context', async (req, res) => {
