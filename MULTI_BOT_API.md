@@ -47,7 +47,6 @@ Credentials are set via environment variables:
 {
   "name": "My New Bot",
   "token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz", // Optional
-  "apiKey": "partner-key-for-this-bot",            // Optional
   "baseBrainContext": "You are a helpful assistant." // Optional
 }
 ```
@@ -57,15 +56,17 @@ Credentials are set via environment variables:
 {
   "success": true,
   "id": 2,
+  "apiKey": "bk_12ab34cd.9f...generated...key", // Returned only once on create
   "message": "Bot created and started"
 }
 ```
 
 **Notes:**
 - Bot will start automatically after creation
-- At least one channel is required: `token` or `apiKey`
+- `name` is required
+- `apiKey` is generated automatically by backend on each bot creation
 - `token` must be unique when provided
-- `apiKey` must be unique when provided
+- Save `apiKey` on frontend right after create response (full key is not returned by list endpoint)
 
 ---
 

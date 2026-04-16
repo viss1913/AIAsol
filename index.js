@@ -22,6 +22,7 @@ const {
   deleteUserContext,
 } = require('./user');
 const basicAuth = require('./basicAuth');
+const { generateApiKey } = require('./security');
 
 // Инициализация БД и Ботов
 const { initBots, startBot, stopBot, sendMessageToUser, broadcastMessage } = require('./telegram');
@@ -72,19 +73,40 @@ app.get('/api/admin/bots', async (req, res) => {
 });
 
 app.post('/api/admin/bots', async (req, res) => {
-  const { name, token, apiKey, baseBrainContext } = req.body;
+  const { name, token, baseBrainContext } = req.body;
   const normalizedToken = typeof token === 'string' && token.trim() ? token.trim() : null;
-  const normalizedApiKey = typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : null;
 
-  if (!name || (!normalizedToken && !normalizedApiKey)) {
-    return res.status(400).json({ error: 'Name and at least one channel (token or apiKey) are required' });
+  if (!name) {
+    return res.status(400).json({ error: 'Name is required' });
   }
   try {
-    const [result] = await pool.query(
-      'INSERT INTO bots (name, token, api_key, base_brain_context) VALUES (?, ?, ?, ?)',
-      [name, normalizedToken, normalizedApiKey, baseBrainContext || '']
-    );
-    const newBotId = result.insertId;
+    // Generate unique API key on server side and return it once in create response.
+    let newBotId = null;
+    let generatedApiKey = null;
+    let created = false;
+
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const keyCandidate = generateApiKey().fullKey;
+      try {
+        const [result] = await pool.query(
+          'INSERT INTO bots (name, token, api_key, base_brain_context) VALUES (?, ?, ?, ?)',
+          [name, normalizedToken, keyCandidate, baseBrainContext || '']
+        );
+        newBotId = result.insertId;
+        generatedApiKey = keyCandidate;
+        created = true;
+        break;
+      } catch (insertErr) {
+        if (insertErr && insertErr.code === 'ER_DUP_ENTRY') {
+          continue;
+        }
+        throw insertErr;
+      }
+    }
+
+    if (!created || !newBotId || !generatedApiKey) {
+      return res.status(500).json({ error: 'Failed to generate unique API key for bot' });
+    }
 
     // Start Telegram bot only when token exists
     const [rows] = await pool.query('SELECT * FROM bots WHERE id = ?', [newBotId]);
@@ -92,7 +114,12 @@ app.post('/api/admin/bots', async (req, res) => {
       startBot(rows[0]);
     }
 
-    res.json({ success: true, id: newBotId, message: 'Bot created and started' });
+    res.json({
+      success: true,
+      id: newBotId,
+      apiKey: generatedApiKey,
+      message: 'Bot created and started'
+    });
   } catch (err) {
     console.error('POST /api/admin/bots error', err);
     res.status(500).json({ error: 'Failed to create bot (Token must be unique)' });
