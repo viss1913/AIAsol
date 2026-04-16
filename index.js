@@ -184,6 +184,22 @@ app.delete('/api/admin/bots/:id', async (req, res) => {
   }
 });
 
+// Backward-compatible alias: "project" maps to bot in current admin panel flow.
+app.delete('/api/admin/projects/:id', async (req, res) => {
+  const projectId = req.params.id;
+  try {
+    await stopBot(projectId);
+    const [result] = await pool.query('DELETE FROM bots WHERE id = ?', [projectId]);
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json({ success: true, message: 'Project deleted' });
+  } catch (err) {
+    console.error('DELETE /api/admin/projects error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // ---------- API: Contexts (Per Bot) ----------
 
 app.get('/api/admin/context', async (req, res) => {
