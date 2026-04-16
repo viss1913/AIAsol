@@ -1,7 +1,9 @@
 require('dotenv').config();
 
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
+const yaml = require('js-yaml');
 const cors = require('cors');
 
 const {
@@ -18,7 +20,7 @@ const {
   ensureUser,
   touchUser,
   addMessage,
-  listUsers,
+  listUsersForBot,
   getUserMessages,
   getUserContext,
   setUserContext,
@@ -48,6 +50,22 @@ app.use(express.json());
 
 // CORS: пока разрешаем всем (можно сузить позже)
 app.use(cors());
+
+// OpenAPI для партнёрского runtime (`POST /chat`) — тот же файл лежит в YML/
+let partnerRuntimeOpenApi = null;
+try {
+  const specPath = path.join(__dirname, 'YML', 'partner-runtime-chat.openapi.yaml');
+  partnerRuntimeOpenApi = yaml.load(fs.readFileSync(specPath, 'utf8'));
+} catch (e) {
+  console.warn('Partner OpenAPI spec not loaded:', e.message);
+}
+
+app.get('/spec', (req, res) => {
+  if (!partnerRuntimeOpenApi) {
+    return res.status(503).json({ error: 'OpenAPI spec unavailable' });
+  }
+  res.json(partnerRuntimeOpenApi);
+});
 
 // ---------- Защищаем админ‑часть ----------
 app.use('/admin', basicAuth);      // статические файлы UI
@@ -279,14 +297,32 @@ app.post('/api/admin/context/delete', async (req, res) => {
 
 // ---------- Пользователи (admin) ----------
 app.get('/api/admin/users', async (req, res) => {
-  const users = await listUsers();
-  res.json(users);
+  try {
+    const botId = req.query.botId;
+    if (!botId) {
+      return res.status(400).json({ error: 'botId query parameter is required' });
+    }
+    const users = await listUsersForBot(botId);
+    res.json(users);
+  } catch (err) {
+    console.error('GET /api/admin/users error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/api/admin/users/:id/messages', async (req, res) => {
-  const userId = req.params.id;
-  const msgs = await getUserMessages(userId);
-  res.json(msgs);
+  try {
+    const botId = req.query.botId;
+    if (!botId) {
+      return res.status(400).json({ error: 'botId query parameter is required' });
+    }
+    const userId = req.params.id;
+    const msgs = await getUserMessages(userId, botId);
+    res.json(msgs);
+  } catch (err) {
+    console.error('GET /api/admin/users/:id/messages error', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/api/admin/users/:id/send', async (req, res) => {
@@ -416,12 +452,27 @@ async function resolveBotByApiKey(req, res, next) {
 }
 
 app.post('/chat', resolveBotByApiKey, async (req, res) => {
-  const { userId, message } = req.body;
+  const { userId, message, displayName, username } = req.body;
   const botId = req.apiBotId;
   if (!userId || !message) {
     return res.status(400).json({ error: 'userId and message are required' });
   }
   try {
+    const nick =
+      typeof displayName === 'string' && displayName.trim()
+        ? displayName.trim()
+        : null;
+    const handle =
+      typeof username === 'string' && username.trim()
+        ? username.trim().startsWith('@')
+          ? username.trim()
+          : `@${username.trim()}`
+        : null;
+
+    await ensureUser(userId, nick, handle);
+    await touchUser(userId);
+    await addMessage(userId, 'user', message, botId);
+
     const session = await partnerGetSession(userId, botId);
     const lastCmd = session.last_command || '/start';
     let history = session.history || [];
@@ -442,6 +493,9 @@ app.post('/chat', resolveBotByApiKey, async (req, res) => {
     history.push({ role: 'user', content: message });
     history.push({ role: 'assistant', content: reply });
     await partnerSaveSession(userId, botId, newCommand, history);
+
+    await addMessage(userId, 'assistant', reply, botId);
+    await touchUser(userId);
 
     res.json({
       reply,

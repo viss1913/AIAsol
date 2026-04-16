@@ -3,7 +3,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const { classifyIntent, askAI } = require('./ai');
 const { getClassifierContext, getResponseContext } = require('./context');
 const { pool } = require('./db');
-const { ensureUser, touchUser, addMessage, deleteUserMessages, listUsers } = require('./user');
+const { ensureUser, touchUser, addMessage, deleteUserMessages, listUsersForBot } = require('./user');
 
 // Global Control Bot (Optional, for monitoring)
 const controlToken = process.env.CONTROL_BOT_TOKEN;
@@ -195,8 +195,7 @@ async function broadcastMessage(text, botId) {
     return { success: false, error: `Bot #${botId} not active or not found` };
   }
 
-  const users = await listUsers(); // This lists ALL users. Ideally we should filter users who interacted with THIS bot.
-  // But for now, let's try to send to all. If the user blocked the bot or never started it, it will fail.
+  const users = await listUsersForBot(botId);
 
   let successCount = 0;
   let failCount = 0;

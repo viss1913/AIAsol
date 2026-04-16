@@ -308,9 +308,13 @@
 
     <!-- 2. USERS -->
     <div id="view-users" class="section-view">
-      <div style="display:flex; justify-content:space-between; margin-bottom: 20px;">
-        <h2>Пользователи</h2>
-        <button class="secondary" onclick="loadUsers()">Обновить</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <h2 style="margin:0">Пользователи</h2>
+        <div style="display:flex; align-items:center; gap: 10px;">
+          <label style="margin:0; font-size: 13px;">Бот</label>
+          <select id="users-bot-select" style="padding:8px; min-width: 200px;"></select>
+          <button class="secondary" onclick="loadUsers()">Обновить</button>
+        </div>
       </div>
       <div id="users-list">Загрузка...</div>
     </div>
@@ -404,11 +408,44 @@
       return res.json();
     }
 
-    // --- Users ---
+    // --- Users (по выбранному боту) ---
+    function bindUsersBotSelectOnce() {
+      const sel = document.getElementById('users-bot-select');
+      if (!sel || sel.dataset.bound === '1') return;
+      sel.dataset.bound = '1';
+      sel.addEventListener('change', () => {
+        localStorage.setItem('adminUsersBotId', sel.value);
+        loadUsers();
+      });
+    }
+
+    async function populateUsersBotSelect() {
+      const sel = document.getElementById('users-bot-select');
+      if (!sel) return null;
+      bindUsersBotSelectOnce();
+      const bots = await apiFetch('/api/admin/bots');
+      sel.innerHTML = (bots || []).map(b =>
+        `<option value="${b.id}">${b.name || ('#' + b.id)}</option>`
+      ).join('');
+      if (!bots || !bots.length) return null;
+      const saved = localStorage.getItem('adminUsersBotId');
+      if (saved && bots.some(b => String(b.id) === saved)) sel.value = saved;
+      return sel.value;
+    }
+
+    async function getUsersBotId() {
+      const sel = document.getElementById('users-bot-select');
+      if (sel && sel.options.length && sel.value) return sel.value;
+      return await populateUsersBotSelect();
+    }
+
     async function loadUsers() {
       const container = document.getElementById('users-list');
       try {
-        const users = await apiFetch('/api/admin/users');
+        await populateUsersBotSelect();
+        const botId = await getUsersBotId();
+        if (!botId) { container.innerHTML = 'Нет ботов — сначала создай бота.'; return; }
+        const users = await apiFetch('/api/admin/users?botId=' + encodeURIComponent(botId));
         if (!users.length) { container.innerHTML = 'Нет пользователей'; return; }
         let html = '<table><thead><tr><th>ID</th><th>Ник</th><th>Регистрация</th><th>Последнее</th><th></th></tr></thead><tbody>';
         users.forEach(u => {
@@ -431,7 +468,9 @@
       document.getElementById('dialogue-title').innerText = nickname;
       const container = document.getElementById('messages-container');
       container.innerHTML = 'Загрузка...';
-      const msgs = await apiFetch(`/api/admin/users/${userId}/messages`);
+      const botId = await getUsersBotId();
+      if (!botId) { container.innerHTML = 'Выбери бота в списке выше.'; return; }
+      const msgs = await apiFetch(`/api/admin/users/${userId}/messages?botId=` + encodeURIComponent(botId));
       container.innerHTML = msgs.map(m => `
         <div class="msg ${m.role}">
           <strong>${m.role === 'user' ? 'Пользователь' : 'Бот'}</strong>: ${m.content}

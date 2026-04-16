@@ -156,8 +156,8 @@ async function initDB() {
       }
     }
 
-    // 4. Table for Users (Global, no bot_id needed, but maybe we want to know which bot they registered with? 
-    // The prompt says "История переписки... общая для всех ботов". Users are likely global entities.)
+    // 4. Users: одна строка на человека (Telegram id / partner userId). Список в админке
+    // строится по bot_id через messages + sessions (см. listUsersForBot в user.js).
     await connection.query(`
       CREATE TABLE IF NOT EXISTS users (
         user_id VARCHAR(255) PRIMARY KEY,
