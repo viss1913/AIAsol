@@ -2,7 +2,8 @@ require('dotenv').config();
 const axios = require('axios');
 
 const API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = 'google/gemini-pro-1.5';
+const MODEL =
+  process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
 
 console.log('--- OpenRouter Connection Test ---');
 console.log('API Key present:', !!API_KEY);

@@ -2,7 +2,8 @@ require('dotenv').config();
 const axios = require('axios');
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const AI_MODEL = 'google/gemini-2.5-flash'; // Актуальная модель
+const AI_MODEL =
+  process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
 
 
 // Функция 1: Классификация намерения (1-й AI с контекстом классификатора)
