@@ -23,13 +23,32 @@ function parseBasicAuth(authHeader) {
   };
 }
 
-async function authenticateAdmin(req, res, next) {
-  try {
-    const credentials = parseBasicAuth(req.headers.authorization);
-    if (!credentials) {
-      return sendUnauthorized(res);
-    }
+function matchEnvAdmin(credentials) {
+  const envUser = process.env.ADMIN_USER;
+  const envPass = process.env.ADMIN_PASS;
+  if (!envUser || !envPass || !credentials) {
+    return false;
+  }
+  return credentials.username === envUser && credentials.password === envPass;
+}
 
+async function authenticateAdmin(req, res, next) {
+  const credentials = parseBasicAuth(req.headers.authorization);
+  if (!credentials) {
+    return sendUnauthorized(res);
+  }
+
+  // Fallback auth via env vars for bootstrap/recovery.
+  if (matchEnvAdmin(credentials)) {
+    req.admin = {
+      id: 0,
+      username: credentials.username,
+      role: 'super_admin'
+    };
+    return next();
+  }
+
+  try {
     const admin = await verifyAdminCredentials(credentials.username, credentials.password);
     if (!admin) {
       return sendUnauthorized(res, 'Invalid credentials.');
