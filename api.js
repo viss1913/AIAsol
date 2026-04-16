@@ -7,13 +7,19 @@ const path = require('path');
 
 const { classifyIntent, askAI } = require('./ai');
 const { getClassifierContext, getResponseContext } = require('./context');
-const { pool } = require('./db');
+const { initDB, pool } = require('./db');
+const { ensureUser, touchUser, addMessage } = require('./user');
+const { authenticateBotApiKey, buildScopedUserId, getOrCreateDefaultProjectAndBot, touchBotApiKeyUsage } = require('./platform');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+async function ensureDefaultBotContext() {
+    return getOrCreateDefaultProjectAndBot();
+}
 
 // Helper: Get Session from MySQL
 async function getSession(userId) {
@@ -25,24 +31,44 @@ async function getSession(userId) {
 }
 
 // Helper: Save Session to MySQL
-async function saveSession(userId, lastCommand, history) {
+async function saveSession(userId, lastCommand, history, context = {}) {
+    const { projectId = null, botId = null, externalUserId = null } = context;
     await pool.query(
-        `INSERT INTO sessions (user_id, last_command, history)
-     VALUES (?, ?, ?)
-     ON DUPLICATE KEY UPDATE last_command = VALUES(last_command), history = VALUES(history)`,
-        [String(userId), lastCommand, JSON.stringify(history)]
+        `INSERT INTO sessions (user_id, project_id, bot_id, external_user_id, last_command, history)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+        project_id = VALUES(project_id),
+        bot_id = VALUES(bot_id),
+        external_user_id = VALUES(external_user_id),
+        last_command = VALUES(last_command),
+        history = VALUES(history)`,
+        [String(userId), projectId, botId, externalUserId ? String(externalUserId) : null, lastCommand, JSON.stringify(history)]
     );
 }
 
-app.use((req, res, next) => {
-    const requiredKey = process.env.PARTNER_API_KEY;
-    if (requiredKey) {
-        const provided = req.header('x-api-key');
-        if (provided !== requiredKey) {
+app.use(async (req, res, next) => {
+    try {
+        const providedKey = req.header('x-api-key');
+        if (!providedKey) {
+            return res.status(401).json({ error: 'API key is required' });
+        }
+
+        const apiKey = await authenticateBotApiKey(providedKey);
+        if (!apiKey) {
             return res.status(401).json({ error: 'Invalid API key' });
         }
+
+        if (apiKey.status !== 'active') {
+            return res.status(403).json({ error: 'Bot is not active' });
+        }
+
+        req.botApiKey = apiKey;
+        await touchBotApiKeyUsage(apiKey.id);
+        next();
+    } catch (error) {
+        console.error('bot api auth error:', error);
+        res.status(500).json({ error: 'Failed to authenticate bot API key' });
     }
-    next();
 });
 
 let openApiSpec = {};
@@ -66,22 +92,50 @@ app.post('/chat', async (req, res) => {
     }
 
     try {
-        const session = await getSession(userId);
+        const botContext = req.botApiKey || await ensureDefaultBotContext();
+        const botId = botContext.bot_id || botContext.bot?.id;
+        const projectId = botContext.project_id || botContext.project?.id;
+        const scopedUserId = buildScopedUserId(botId, userId);
+
+        await ensureUser(scopedUserId, 'API User', {
+            externalUserId: userId,
+            projectId,
+            botId
+        });
+        await touchUser(scopedUserId);
+        await addMessage(scopedUserId, 'user', message, {
+            externalUserId: userId,
+            projectId,
+            botId
+        });
+
+        const session = await getSession(scopedUserId);
         const lastCmd = session.last_command || '/start';
         let history = session.history || [];
         if (!Array.isArray(history)) history = [];
 
-        const classifierContext = await getClassifierContext(lastCmd);
+        const classifierContext = await getClassifierContext(botId, lastCmd);
         const newCommand = await classifyIntent(message, classifierContext);
-        const responseContext = await getResponseContext(newCommand);
-        const reply = await askAI(message, responseContext);
+        const responseContext = await getResponseContext(botId, newCommand);
+        const reply = await askAI(message, responseContext, history);
 
         history.push({ role: 'user', content: message });
         history.push({ role: 'assistant', content: reply });
-        await saveSession(userId, newCommand, history);
+        await addMessage(scopedUserId, 'assistant', reply, {
+            externalUserId: userId,
+            projectId,
+            botId
+        });
+        await touchUser(scopedUserId);
+        await saveSession(scopedUserId, newCommand, history, {
+            externalUserId: userId,
+            projectId,
+            botId
+        });
 
         res.json({
             reply,
+            botId,
             session: { lastCommand: newCommand, history }
         });
     } catch (err) {
@@ -90,6 +144,10 @@ app.post('/chat', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`✅ Partner API listening on http://localhost:${PORT}`);
-});
+;(async () => {
+    await initDB();
+    await ensureDefaultBotContext();
+    app.listen(PORT, () => {
+        console.log(`✅ Partner API listening on http://localhost:${PORT}`);
+    });
+})();
