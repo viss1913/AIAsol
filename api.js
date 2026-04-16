@@ -15,12 +15,6 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Helper: Get Default Bot ID
-async function getDefaultBotId() {
-    const [rows] = await pool.query('SELECT id FROM bots WHERE is_active = TRUE LIMIT 1');
-    return rows.length > 0 ? rows[0].id : null;
-}
-
 // Helper: Get Session from MySQL
 async function getSession(userId, botId) {
     const [rows] = await pool.query('SELECT * FROM sessions WHERE user_id = ? AND bot_id = ?', [String(userId), botId]);
@@ -40,16 +34,33 @@ async function saveSession(userId, botId, lastCommand, history) {
     );
 }
 
-app.use((req, res, next) => {
-    const requiredKey = process.env.PARTNER_API_KEY;
-    if (requiredKey) {
-        const provided = req.header('x-api-key');
-        if (provided !== requiredKey) {
+async function resolveBotByApiKey(req, res, next) {
+    const provided = req.header('x-api-key');
+    if (!provided) {
+        return res.status(401).json({ error: 'x-api-key header is required' });
+    }
+
+    try {
+        const [rows] = await pool.query(
+            'SELECT id, is_active FROM bots WHERE api_key = ? LIMIT 1',
+            [provided]
+        );
+
+        if (rows.length === 0) {
             return res.status(401).json({ error: 'Invalid API key' });
         }
+
+        if (!rows[0].is_active) {
+            return res.status(403).json({ error: 'Bot is inactive' });
+        }
+
+        req.apiBotId = rows[0].id;
+        next();
+    } catch (err) {
+        console.error('API key lookup error:', err);
+        res.status(500).json({ error: 'Internal server error' });
     }
-    next();
-});
+}
 
 let openApiSpec = {};
 try {
@@ -65,20 +76,14 @@ app.get('/spec', (req, res) => {
     res.json(openApiSpec);
 });
 
-app.post('/chat', async (req, res) => {
-    let { userId, message, botId } = req.body;
+app.post('/chat', resolveBotByApiKey, async (req, res) => {
+    const { userId, message } = req.body;
+    const botId = req.apiBotId;
     if (!userId || !message) {
         return res.status(400).json({ error: 'userId and message are required' });
     }
 
     try {
-        if (!botId) {
-            botId = await getDefaultBotId();
-            if (!botId) {
-                return res.status(400).json({ error: 'No active bots found' });
-            }
-        }
-
         const session = await getSession(userId, botId);
         const lastCmd = session.last_command || '/start';
         let history = session.history || [];

@@ -46,7 +46,8 @@ Credentials are set via environment variables:
 ```json
 {
   "name": "My New Bot",
-  "token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz",
+  "token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz", // Optional
+  "apiKey": "partner-key-for-this-bot",            // Optional
   "baseBrainContext": "You are a helpful assistant." // Optional
 }
 ```
@@ -62,7 +63,9 @@ Credentials are set via environment variables:
 
 **Notes:**
 - Bot will start automatically after creation
-- Token must be unique
+- At least one channel is required: `token` or `apiKey`
+- `token` must be unique when provided
+- `apiKey` must be unique when provided
 
 ---
 
@@ -74,6 +77,7 @@ Credentials are set via environment variables:
 {
   "name": "Updated Name",           // Optional
   "token": "new_token",             // Optional
+  "apiKey": "new-partner-api-key",  // Optional
   "isActive": false,                // Optional
   "baseBrainContext": "New context" // Optional
 }
@@ -89,7 +93,8 @@ Credentials are set via environment variables:
 
 **Notes:**
 - If `isActive` is set to `false`, bot will stop
-- If `isActive` is set to `true` or token changes, bot will restart
+- If `isActive` is set to `true` or token changes, Telegram bot will restart
+- Updating only `apiKey` does not restart Telegram polling
 
 ---
 
@@ -402,12 +407,59 @@ Credentials are set via environment variables:
 CREATE TABLE bots (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
-  token VARCHAR(255) NOT NULL UNIQUE,
+  token VARCHAR(255) NULL UNIQUE,
+  api_key VARCHAR(255) NULL UNIQUE,
   base_brain_context TEXT,
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
+
+---
+
+## Partner API (Per-Bot API Key)
+
+### Authentication
+Public Partner API requests must include bot-specific header:
+
+```
+x-api-key: <apiKey for concrete bot>
+```
+
+`apiKey` identifies the target bot automatically. `botId` is not required for `/chat`.
+
+### Chat
+**POST** `/chat`
+
+**Headers:**
+```
+x-api-key: partner-key-for-this-bot
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "userId": "123456",
+  "message": "Hello"
+}
+```
+
+**Response:**
+```json
+{
+  "reply": "Hi! How can I help?",
+  "session": {
+    "lastCommand": "/start",
+    "history": []
+  },
+  "botId": 2
+}
+```
+
+**Errors:**
+- `401` when `x-api-key` is missing or invalid
+- `403` when bot exists but `is_active = false`
 
 #### `ai_commands`
 ```sql

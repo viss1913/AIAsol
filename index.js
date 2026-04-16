@@ -56,11 +56,13 @@ app.use('/admin', express.static(path.join(__dirname, 'public')));
 
 app.get('/api/admin/bots', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id, name, token, is_active, created_at FROM bots');
+    const [rows] = await pool.query('SELECT id, name, token, api_key, is_active, created_at FROM bots');
     // Mask tokens for security
     const safeRows = rows.map(bot => ({
       ...bot,
-      token: bot.token ? `${bot.token.substring(0, 5)}...` : ''
+      token: bot.token ? `${bot.token.substring(0, 5)}...` : '',
+      api_key: bot.api_key ? `${bot.api_key.substring(0, 5)}...` : '',
+      hasApiKey: Boolean(bot.api_key)
     }));
     res.json(safeRows);
   } catch (err) {
@@ -70,20 +72,23 @@ app.get('/api/admin/bots', async (req, res) => {
 });
 
 app.post('/api/admin/bots', async (req, res) => {
-  const { name, token, baseBrainContext } = req.body;
-  if (!name || !token) {
-    return res.status(400).json({ error: 'Name and Token are required' });
+  const { name, token, apiKey, baseBrainContext } = req.body;
+  const normalizedToken = typeof token === 'string' && token.trim() ? token.trim() : null;
+  const normalizedApiKey = typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : null;
+
+  if (!name || (!normalizedToken && !normalizedApiKey)) {
+    return res.status(400).json({ error: 'Name and at least one channel (token or apiKey) are required' });
   }
   try {
     const [result] = await pool.query(
-      'INSERT INTO bots (name, token, base_brain_context) VALUES (?, ?, ?)',
-      [name, token, baseBrainContext || '']
+      'INSERT INTO bots (name, token, api_key, base_brain_context) VALUES (?, ?, ?, ?)',
+      [name, normalizedToken, normalizedApiKey, baseBrainContext || '']
     );
     const newBotId = result.insertId;
 
-    // Start the new bot immediately
+    // Start Telegram bot only when token exists
     const [rows] = await pool.query('SELECT * FROM bots WHERE id = ?', [newBotId]);
-    if (rows.length > 0) {
+    if (rows.length > 0 && rows[0].token) {
       startBot(rows[0]);
     }
 
@@ -96,14 +101,23 @@ app.post('/api/admin/bots', async (req, res) => {
 
 app.put('/api/admin/bots/:id', async (req, res) => {
   const botId = req.params.id;
-  const { name, token, isActive, baseBrainContext } = req.body;
+  const { name, token, apiKey, isActive, baseBrainContext } = req.body;
 
   try {
     // Build query dynamically
     const updates = [];
     const params = [];
     if (name !== undefined) { updates.push('name = ?'); params.push(name); }
-    if (token !== undefined) { updates.push('token = ?'); params.push(token); }
+    if (token !== undefined) {
+      const normalizedToken = typeof token === 'string' && token.trim() ? token.trim() : null;
+      updates.push('token = ?');
+      params.push(normalizedToken);
+    }
+    if (apiKey !== undefined) {
+      const normalizedApiKey = typeof apiKey === 'string' && apiKey.trim() ? apiKey.trim() : null;
+      updates.push('api_key = ?');
+      params.push(normalizedApiKey);
+    }
     if (isActive !== undefined) { updates.push('is_active = ?'); params.push(isActive); }
     if (baseBrainContext !== undefined) { updates.push('base_brain_context = ?'); params.push(baseBrainContext); }
 
@@ -115,11 +129,11 @@ app.put('/api/admin/bots/:id', async (req, res) => {
     // Restart bot logic
     if (isActive === false) {
       await stopBot(botId);
-    } else if (isActive === true || token) {
+    } else if (isActive === true || token !== undefined) {
       // If reactivated or token changed, restart
       await stopBot(botId);
       const [rows] = await pool.query('SELECT * FROM bots WHERE id = ?', [botId]);
-      if (rows.length > 0 && rows[0].is_active) {
+      if (rows.length > 0 && rows[0].is_active && rows[0].token) {
         startBot(rows[0]);
       }
     }
