@@ -30,7 +30,22 @@ async function createChatCompletion(model, messages) {
     }
   );
 
-  return response.data.choices?.[0]?.message?.content || '';
+  const content = response.data.choices?.[0]?.message?.content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (!part) return '';
+        if (typeof part === 'string') return part;
+        if (typeof part.text === 'string') return part.text;
+        return '';
+      })
+      .join('\n')
+      .trim();
+  }
+  return '';
 }
 
 
