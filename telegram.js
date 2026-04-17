@@ -1,7 +1,12 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const { classifyIntent, askAI } = require('./ai');
-const { getClassifierContext, getResponseContext } = require('./context');
+const { classifyIntent, askAI, analyzeImageWithVision } = require('./ai');
+const {
+  getClassifierContext,
+  getResponseContext,
+  getImageVisionContext,
+  injectVisionIntoContext,
+} = require('./context');
 const { pool } = require('./db');
 const { ensureUser, touchUser, addMessage, deleteUserMessages, listUsersForBot } = require('./user');
 
@@ -18,6 +23,24 @@ if (controlBot) {
 
 // Active Bots Map: botId -> TelegramBot instance
 const activeBots = new Map();
+
+function extractTelegramImageFileId(msg) {
+  if (Array.isArray(msg.photo) && msg.photo.length > 0) {
+    const biggest = msg.photo[msg.photo.length - 1];
+    if (biggest?.file_id) return biggest.file_id;
+  }
+
+  if (
+    msg.document &&
+    msg.document.file_id &&
+    typeof msg.document.mime_type === 'string' &&
+    msg.document.mime_type.startsWith('image/')
+  ) {
+    return msg.document.file_id;
+  }
+
+  return null;
+}
 
 // Helper: Get Session from MySQL
 async function getSession(chatId, botId) {
@@ -64,13 +87,23 @@ function startBot(botRow) {
 
     bot.on('message', async (msg) => {
       const chatId = msg.chat.id;
-      const userMessage = msg.text;
+      const imageFileId = extractTelegramImageFileId(msg);
+      const userMessage = typeof msg.text === 'string' && msg.text.trim()
+        ? msg.text.trim()
+        : imageFileId
+          ? 'Пользователь отправил изображение.'
+          : '';
       const userName = msg.from.first_name || 'Пользователь';
       const userHandle = msg.from.username ? `@${msg.from.username}` : null;
 
       console.log(`[Bot #${botId}] [${chatId}] ${userName} (${userHandle}): ${userMessage}`);
 
       try {
+        if (!userMessage) {
+          await bot.sendMessage(chatId, 'Пришли текст или изображение, и я помогу.');
+          return;
+        }
+
         // Register / update user info
         await ensureUser(chatId, userName, userHandle);
         await touchUser(chatId);
@@ -113,9 +146,26 @@ function startBot(botRow) {
           console.log(`[Control Bot] ⚠️ Skipped notification. Bot: ${!!controlBot}, ChatID: ${!!controlChatId}`);
         }
 
-        const responseContext = await getResponseContext(botId, newCommand, chatId);
+        let responseContext = await getResponseContext(botId, newCommand, chatId);
         console.log(`[Bot #${botId}] [DEBUG] Response Context Length: ${responseContext.length}`);
         console.log(`[Bot #${botId}] [DEBUG] Response Context Preview: ${responseContext.substring(0, 50)}...`);
+
+        if (imageFileId) {
+          console.log(`[Bot #${botId}] [${chatId}] [VISION] triggered fileId=${imageFileId}`);
+          try {
+            const imageLink = await bot.getFileLink(imageFileId);
+            const imageVisionContext = await getImageVisionContext(botId, newCommand);
+            const visionResult = await analyzeImageWithVision(
+              userMessage,
+              imageLink,
+              imageVisionContext
+            );
+            responseContext = injectVisionIntoContext(responseContext, visionResult, imageVisionContext);
+            console.log(`[Bot #${botId}] [${chatId}] [VISION] injected length=${visionResult.length}`);
+          } catch (visionErr) {
+            console.error(`[Bot #${botId}] [${chatId}] [VISION] failed:`, visionErr.message || visionErr);
+          }
+        }
 
         const reply = await askAI(userMessage, responseContext, history);
         console.log(`[Bot #${botId}] [${chatId}] Reply: ${reply}`);

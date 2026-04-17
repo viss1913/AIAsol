@@ -99,7 +99,9 @@ async function analyzeImageWithVision(userMessage, imageUrl, imageVisionContext 
 
     return String(result).trim();
   } catch (error) {
-    console.error('Vision error:', error.response?.data || error.message);
+    const errorCode = error.response?.status || error.code || 'unknown';
+    const errorBody = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+    console.error(`Vision error [${errorCode}]:`, errorBody);
     return 'Не удалось выполнить анализ изображения, продолжай диалог только по тексту пользователя.';
   }
 }

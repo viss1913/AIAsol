@@ -530,9 +530,11 @@ app.post('/chat', resolveBotByApiKey, upload.single('image'), async (req, res) =
     }
 
     if (imagePayload) {
+      console.log(`[Partner /chat] [VISION] triggered botId=${botId} userId=${userId}`);
       const imageVisionContext = await getImageVisionContext(botId, newCommand);
       const visionResult = await analyzeImageWithVision(message, imagePayload, imageVisionContext);
       responseContext = injectVisionIntoContext(responseContext, visionResult, imageVisionContext);
+      console.log(`[Partner /chat] [VISION] injected length=${visionResult.length}`);
     }
 
     const reply = await askAI(message, responseContext, history);
