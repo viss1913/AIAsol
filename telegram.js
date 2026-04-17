@@ -1,5 +1,6 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
 const { classifyIntent, askAI, analyzeImageWithVision } = require('./ai');
 const {
   getClassifierContext,
@@ -40,6 +41,25 @@ function extractTelegramImageFileId(msg) {
   }
 
   return null;
+}
+
+function resolveTelegramImageMimeType(msg) {
+  if (
+    msg.document &&
+    typeof msg.document.mime_type === 'string' &&
+    msg.document.mime_type.startsWith('image/')
+  ) {
+    return msg.document.mime_type;
+  }
+  return 'image/jpeg';
+}
+
+async function buildTelegramImageDataUrl(bot, msg, fileId) {
+  const fileLink = await bot.getFileLink(fileId);
+  const imageResponse = await axios.get(fileLink, { responseType: 'arraybuffer' });
+  const mimeType = resolveTelegramImageMimeType(msg);
+  const base64 = Buffer.from(imageResponse.data).toString('base64');
+  return `data:${mimeType};base64,${base64}`;
 }
 
 // Helper: Get Session from MySQL
@@ -159,11 +179,11 @@ function startBot(botRow) {
         if (imageFileId) {
           console.log(`[Bot #${botId}] [${chatId}] [VISION] triggered fileId=${imageFileId}`);
           try {
-            const imageLink = await bot.getFileLink(imageFileId);
+            const imagePayload = await buildTelegramImageDataUrl(bot, msg, imageFileId);
             const imageVisionContext = await getImageVisionContext(botId, newCommand);
             const visionResult = await analyzeImageWithVision(
               userMessage,
-              imageLink,
+              imagePayload,
               imageVisionContext
             );
             responseContext = injectVisionIntoContext(responseContext, visionResult, imageVisionContext);
