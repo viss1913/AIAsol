@@ -25,6 +25,16 @@ if (controlBot) {
 // Active Bots Map: botId -> TelegramBot instance
 const activeBots = new Map();
 
+function buildTelegramConversationUserId(msg) {
+  const chatId = msg.chat?.id;
+  const fromId = msg.from?.id;
+  const chatType = msg.chat?.type;
+
+  if (!fromId) return String(chatId);
+  if (chatType === 'private') return String(fromId);
+  return `${chatId}:${fromId}`;
+}
+
 function extractTelegramImageFileId(msg) {
   if (Array.isArray(msg.photo) && msg.photo.length > 0) {
     const biggest = msg.photo[msg.photo.length - 1];
@@ -107,6 +117,7 @@ function startBot(botRow) {
 
     bot.on('message', async (msg) => {
       const chatId = msg.chat.id;
+      const conversationUserId = buildTelegramConversationUserId(msg);
       const imageFileId = extractTelegramImageFileId(msg);
       const messageText = typeof msg.text === 'string' && msg.text.trim()
         ? msg.text.trim()
@@ -122,7 +133,9 @@ function startBot(botRow) {
       const userName = msg.from.first_name || 'Пользователь';
       const userHandle = msg.from.username ? `@${msg.from.username}` : null;
 
-      console.log(`[Bot #${botId}] [${chatId}] ${userName} (${userHandle}): ${userMessage}`);
+      console.log(
+        `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ${userName} (${userHandle}): ${userMessage}`
+      );
 
       try {
         if (!userMessage) {
@@ -131,39 +144,41 @@ function startBot(botRow) {
         }
 
         // Register / update user info
-        await ensureUser(chatId, userName, userHandle);
-        await touchUser(chatId);
-        await addMessage(chatId, 'user', userMessage, botId);
+        await ensureUser(conversationUserId, userName, userHandle);
+        await touchUser(conversationUserId);
+        await addMessage(conversationUserId, 'user', userMessage, botId);
 
         if (userMessage === '/reset') {
           // Reset session for THIS bot
-          await pool.query('DELETE FROM sessions WHERE user_id = ? AND bot_id = ?', [String(chatId), botId]);
+          await pool.query('DELETE FROM sessions WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
           // We do NOT delete messages history globally, maybe just for this context? 
           // Prompt says "Вся история переписки удалена". 
           // Let's keep it safe and delete messages for this bot only? 
           // Or global? Let's delete for this bot to be safe in multi-bot env.
-          await pool.query('DELETE FROM messages WHERE user_id = ? AND bot_id = ?', [String(chatId), botId]);
+          await pool.query('DELETE FROM messages WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
 
-          console.log(`[Bot #${botId}] [${chatId}] ✅ Reset completed.`);
+          console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed.`);
           bot.sendMessage(chatId, '🔄 История диалога с этим ботом очищена. Чем могу помочь?');
           if (controlBot && controlChatId) {
-            controlBot.sendMessage(controlChatId, `🔄 Сброс (Bot #${botId}): ${userName} (${chatId})`);
+            controlBot.sendMessage(controlChatId, `🔄 Сброс (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId})`);
           }
           return;
         }
 
-        const session = await getSession(chatId, botId);
+        const session = await getSession(conversationUserId, botId);
         const currentCommand = session.last_command || '/start';
         let history = session.history || [];
         if (!Array.isArray(history)) history = [];
 
         const classifierContext = await getClassifierContext(botId, currentCommand);
         const newCommand = await classifyIntent(userMessage, classifierContext);
-        console.log(`[Bot #${botId}] [${chatId}] Current: ${currentCommand} → New: ${newCommand}`);
+        console.log(
+          `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Current: ${currentCommand} → New: ${newCommand}`
+        );
 
         if (controlBot && controlChatId) {
           const cleanChatId = controlChatId.trim();
-          const messageText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (${chatId})\n💬 "${userMessage}"\n🔄 ${currentCommand} → ${newCommand}\n`;
+          const messageText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (chat:${chatId}, user:${conversationUserId})\n💬 "${userMessage}"\n🔄 ${currentCommand} → ${newCommand}\n`;
 
           controlBot.sendMessage(cleanChatId, messageText)
             .then(() => console.log(`[Control Bot] ✅ Notification sent to ${cleanChatId}`))
@@ -172,12 +187,12 @@ function startBot(botRow) {
           console.log(`[Control Bot] ⚠️ Skipped notification. Bot: ${!!controlBot}, ChatID: ${!!controlChatId}`);
         }
 
-        let responseContext = await getResponseContext(botId, newCommand, chatId);
-        console.log(`[Bot #${botId}] [DEBUG] Response Context Length: ${responseContext.length}`);
+        let responseContext = await getResponseContext(botId, newCommand, conversationUserId);
+        console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [DEBUG] Response Context Length: ${responseContext.length}`);
         console.log(`[Bot #${botId}] [DEBUG] Response Context Preview: ${responseContext.substring(0, 50)}...`);
 
         if (imageFileId) {
-          console.log(`[Bot #${botId}] [${chatId}] [VISION] triggered fileId=${imageFileId}`);
+          console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [VISION] triggered fileId=${imageFileId}`);
           try {
             const imagePayload = await buildTelegramImageDataUrl(bot, msg, imageFileId);
             const imageVisionContext = await getImageVisionContext(botId, newCommand);
@@ -188,23 +203,23 @@ function startBot(botRow) {
             );
             responseContext = injectVisionIntoContext(responseContext, vision.text, imageVisionContext);
             console.log(
-              `[Bot #${botId}] [${chatId}] [VISION] injected ok=${vision.ok} length=${vision.text.length} code=${vision.errorCode || 'none'}`
+              `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [VISION] injected ok=${vision.ok} length=${vision.text.length} code=${vision.errorCode || 'none'}`
             );
           } catch (visionErr) {
-            console.error(`[Bot #${botId}] [${chatId}] [VISION] failed:`, visionErr.message || visionErr);
+            console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [VISION] failed:`, visionErr.message || visionErr);
           }
         }
 
         const reply = await askAI(userMessage, responseContext, history);
-        console.log(`[Bot #${botId}] [${chatId}] Reply: ${reply}`);
+        console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Reply: ${reply}`);
 
         // Save assistant reply
-        await addMessage(chatId, 'assistant', reply, botId);
-        await touchUser(chatId);
+        await addMessage(conversationUserId, 'assistant', reply, botId);
+        await touchUser(conversationUserId);
 
         history.push({ role: 'user', content: userMessage });
         history.push({ role: 'assistant', content: reply });
-        await saveSession(chatId, botId, newCommand, history);
+        await saveSession(conversationUserId, botId, newCommand, history);
 
         // Format for Telegram
         const formattedReply = reply
@@ -215,10 +230,10 @@ function startBot(botRow) {
 
         bot.sendMessage(chatId, formattedReply, { parse_mode: 'HTML' });
       } catch (error) {
-        console.error(`[Bot #${botId}] [${chatId}] Error:`, error);
+        console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Error:`, error);
         bot.sendMessage(chatId, 'Произошла ошибка, попробуйте позже.');
         if (controlBot && controlChatId) {
-          controlBot.sendMessage(controlChatId, `❌ Ошибка (Bot #${botId}): ${userName} (${chatId}): ${error.message}`);
+          controlBot.sendMessage(controlChatId, `❌ Ошибка (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId}): ${error.message}`);
         }
       }
     });
