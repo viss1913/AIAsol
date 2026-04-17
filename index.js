@@ -487,6 +487,7 @@ async function resolveBotByApiKey(req, res, next) {
 app.post('/chat', resolveBotByApiKey, upload.single('image'), async (req, res) => {
   const { userId, message, displayName, username } = req.body;
   const botId = req.apiBotId;
+  const debugVision = String(process.env.DEBUG_VISION_RESPONSE || '').trim() === '1';
   if (!userId || !message) {
     return res.status(400).json({ error: 'userId and message are required' });
   }
@@ -529,12 +530,23 @@ app.post('/chat', resolveBotByApiKey, upload.single('image'), async (req, res) =
       return res.status(400).json({ error: imgError.message });
     }
 
+    let visionDebug = {
+      triggered: false,
+      ok: null,
+      errorCode: null,
+    };
+
     if (imagePayload) {
+      visionDebug.triggered = true;
       console.log(`[Partner /chat] [VISION] triggered botId=${botId} userId=${userId}`);
       const imageVisionContext = await getImageVisionContext(botId, newCommand);
-      const visionResult = await analyzeImageWithVision(message, imagePayload, imageVisionContext);
-      responseContext = injectVisionIntoContext(responseContext, visionResult, imageVisionContext);
-      console.log(`[Partner /chat] [VISION] injected length=${visionResult.length}`);
+      const vision = await analyzeImageWithVision(message, imagePayload, imageVisionContext);
+      visionDebug.ok = vision.ok;
+      visionDebug.errorCode = vision.errorCode;
+      responseContext = injectVisionIntoContext(responseContext, vision.text, imageVisionContext);
+      console.log(
+        `[Partner /chat] [VISION] injected ok=${vision.ok} length=${vision.text.length} code=${vision.errorCode || 'none'}`
+      );
     }
 
     const reply = await askAI(message, responseContext, history);
@@ -546,11 +558,15 @@ app.post('/chat', resolveBotByApiKey, upload.single('image'), async (req, res) =
     await addMessage(userId, 'assistant', reply, botId);
     await touchUser(userId);
 
-    res.json({
+    const payload = {
       reply,
       session: { lastCommand: newCommand, history },
       botId,
-    });
+    };
+    if (debugVision) {
+      payload.visionDebug = visionDebug;
+    }
+    res.json(payload);
   } catch (err) {
     console.error('POST /chat error:', err);
     res.status(500).json({ error: 'Internal server error' });

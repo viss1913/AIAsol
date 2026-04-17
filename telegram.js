@@ -181,13 +181,15 @@ function startBot(botRow) {
           try {
             const imagePayload = await buildTelegramImageDataUrl(bot, msg, imageFileId);
             const imageVisionContext = await getImageVisionContext(botId, newCommand);
-            const visionResult = await analyzeImageWithVision(
+            const vision = await analyzeImageWithVision(
               userMessage,
               imagePayload,
               imageVisionContext
             );
-            responseContext = injectVisionIntoContext(responseContext, visionResult, imageVisionContext);
-            console.log(`[Bot #${botId}] [${chatId}] [VISION] injected length=${visionResult.length}`);
+            responseContext = injectVisionIntoContext(responseContext, vision.text, imageVisionContext);
+            console.log(
+              `[Bot #${botId}] [${chatId}] [VISION] injected ok=${vision.ok} length=${vision.text.length} code=${vision.errorCode || 'none'}`
+            );
           } catch (visionErr) {
             console.error(`[Bot #${botId}] [${chatId}] [VISION] failed:`, visionErr.message || visionErr);
           }
