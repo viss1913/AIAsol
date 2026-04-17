@@ -446,6 +446,33 @@ Content-Type: application/json
 }
 ```
 
+**Request Body (JSON + imageUrl):**
+```json
+{
+  "userId": "123456",
+  "message": "Что на фото и сколько калорий?",
+  "imageUrl": "https://example.com/food.jpg"
+}
+```
+
+**Request Body (JSON + imageBase64):**
+```json
+{
+  "userId": "123456",
+  "message": "Оцени БЖУ по фото",
+  "imageBase64": "/9j/4AAQSkZJRgABAQAAAQABAAD...",
+  "imageMimeType": "image/jpeg"
+}
+```
+
+**Request Body (`multipart/form-data`):**
+- `userId` (string, required)
+- `message` (string, required)
+- `image` (file, optional)
+
+If image is present (`image`/`imageUrl`/`imageBase64`), vision-analysis runs automatically before final text generation.
+Image priority when several are passed: `image` -> `imageUrl` -> `imageBase64`.
+
 **Response:**
 ```json
 {
@@ -461,6 +488,23 @@ Content-Type: application/json
 **Errors:**
 - `401` when `x-api-key` is missing or invalid
 - `403` when bot exists but `is_active = false`
+
+### Vision Context in Admin API
+To control image-analysis prompt per bot, set context key `image_vision` via admin endpoint:
+
+**POST** `/api/admin/context`
+```json
+{
+  "botId": 1,
+  "key": "image_vision",
+  "response": "Тебе необходимо посчитать БЖУ и калории.",
+  "section": "general"
+}
+```
+
+Optional command-specific overrides are also supported:
+- `<command>:image_vision` (example: `/ccal:image_vision`)
+- fallback is `image_vision` key
 
 #### `ai_commands`
 ```sql

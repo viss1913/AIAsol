@@ -23,6 +23,20 @@ info:
 
     При вызове из браузера origin партнёра должен быть разрешён политикой CORS на runtime-сервере (иначе запрос упрётся в preflight / network error).
 
+    ## Vision / анализ изображений
+
+    Если в запросе есть изображение, сервер автоматически запускает vision-анализ и подмешивает результат в финальный контекст ответа.
+
+    Поддерживаемые способы передачи изображения:
+    - `multipart/form-data` поле `image` (рекомендуется для браузера/мобилки)
+    - JSON поле `imageUrl`
+    - JSON поле `imageBase64` (+ `imageMimeType`, если base64 без data URL префикса)
+
+    Приоритет, если передано несколько вариантов одновременно:
+    1) `image` файл
+    2) `imageUrl`
+    3) `imageBase64`
+
     ## Рабочий хост (production)
 
     База API (схема + хост, без слэша в конце): `https://aiasol-production-c345.up.railway.app`
@@ -111,6 +125,9 @@ paths:
           multipart/form-data:
             schema:
               $ref: "#/components/schemas/ChatRequestMultipart"
+            encoding:
+              image:
+                contentType: image/*        
       responses:
         "200":
           description: Успешный ответ

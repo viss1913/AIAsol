@@ -2,12 +2,12 @@ require('dotenv').config();
 const axios = require('axios');
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const AI_MODEL =
-  process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash';
-const OPENROUTER_VISION_MODEL =
+const AI_MODEL = (process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash').trim();
+const OPENROUTER_VISION_MODEL = (
   process.env.OPENROUTER_VISION_MODEL ||
   process.env.AI_VISION_MODEL ||
-  'google/gemini-2.5-flash';
+  'google/gemini-2.5-flash'
+).trim();
 
 function getOpenRouterHeaders() {
   return {
