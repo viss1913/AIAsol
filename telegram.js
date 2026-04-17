@@ -88,8 +88,14 @@ function startBot(botRow) {
     bot.on('message', async (msg) => {
       const chatId = msg.chat.id;
       const imageFileId = extractTelegramImageFileId(msg);
-      const userMessage = typeof msg.text === 'string' && msg.text.trim()
+      const messageText = typeof msg.text === 'string' && msg.text.trim()
         ? msg.text.trim()
+        : '';
+      const messageCaption = typeof msg.caption === 'string' && msg.caption.trim()
+        ? msg.caption.trim()
+        : '';
+      const userMessage = messageText || messageCaption
+        ? (messageText || messageCaption)
         : imageFileId
           ? 'Пользователь отправил изображение.'
           : '';
