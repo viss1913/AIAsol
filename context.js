@@ -170,6 +170,46 @@ async function getResponseContext(botId, command, userId = null) {
   }
 }
 
+async function getImageVisionContext(botId, command) {
+  try {
+    const candidates = [
+      `${command}:image_vision`,
+      'image_vision',
+      '/start:image_vision',
+    ];
+
+    for (const key of candidates) {
+      const [rows] = await pool.query(
+        'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
+        [key, botId]
+      );
+      if (rows.length > 0 && rows[0].response) {
+        return rows[0].response;
+      }
+    }
+
+    return '';
+  } catch (err) {
+    console.error(`Error getting image vision context for bot ${botId}:`, err);
+    return '';
+  }
+}
+
+function injectVisionIntoContext(baseContext, visionResult, imageVisionContext = '') {
+  if (!visionResult || !String(visionResult).trim()) {
+    return baseContext;
+  }
+
+  let context = baseContext;
+
+  if (imageVisionContext && String(imageVisionContext).trim()) {
+    context += `\n---\nИнструкция image_vision:\n${String(imageVisionContext).trim()}`;
+  }
+
+  context += `\n---\nРезультат анализа изображения:\n${String(visionResult).trim()}`;
+  return context;
+}
+
 module.exports = {
   migrateFromJSON,
   loadContexts,
@@ -177,4 +217,6 @@ module.exports = {
   deleteContext,
   getClassifierContext,
   getResponseContext,
+  getImageVisionContext,
+  injectVisionIntoContext,
 };

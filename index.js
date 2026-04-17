@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const cors = require('cors');
+const multer = require('multer');
 
 const {
   updateContext,
@@ -13,8 +14,10 @@ const {
   deleteContext,
   getClassifierContext,
   getResponseContext,
+  getImageVisionContext,
+  injectVisionIntoContext,
 } = require('./context');
-const { classifyIntent, askAI } = require('./ai');
+const { classifyIntent, askAI, analyzeImageWithVision } = require('./ai');
 const { initDB, pool } = require('./db');
 const {
   ensureUser,
@@ -46,10 +49,40 @@ const { initBots, startBot, stopBot, sendMessageToUser, broadcastMessage } = req
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 
 // CORS: пока разрешаем всем (можно сузить позже)
 app.use(cors());
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
+function toDataUrlFromBase64(imageBase64, mimeType = 'image/jpeg') {
+  const normalized = String(imageBase64 || '').trim();
+  if (!normalized) return null;
+  if (normalized.startsWith('data:image/')) return normalized;
+  return `data:${mimeType};base64,${normalized}`;
+}
+
+function extractImagePayload(req) {
+  if (req.file) {
+    if (!req.file.mimetype || !req.file.mimetype.startsWith('image/')) {
+      throw new Error('Uploaded file must be an image');
+    }
+    return `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+  }
+
+  const { imageUrl, imageBase64, imageMimeType } = req.body || {};
+  if (imageUrl && String(imageUrl).trim()) {
+    return String(imageUrl).trim();
+  }
+  if (imageBase64 && String(imageBase64).trim()) {
+    return toDataUrlFromBase64(imageBase64, imageMimeType || 'image/jpeg');
+  }
+
+  return null;
+}
 
 // OpenAPI для партнёрского runtime (`POST /chat`) — тот же файл лежит в YML/
 let partnerRuntimeOpenApi = null;
@@ -451,7 +484,7 @@ async function resolveBotByApiKey(req, res, next) {
   }
 }
 
-app.post('/chat', resolveBotByApiKey, async (req, res) => {
+app.post('/chat', resolveBotByApiKey, upload.single('image'), async (req, res) => {
   const { userId, message, displayName, username } = req.body;
   const botId = req.apiBotId;
   if (!userId || !message) {
@@ -487,7 +520,21 @@ app.post('/chat', resolveBotByApiKey, async (req, res) => {
 
     const classifierContext = await getClassifierContext(botId, lastCmd);
     const newCommand = await classifyIntent(message, classifierContext);
-    const responseContext = await getResponseContext(botId, newCommand, userId);
+    let responseContext = await getResponseContext(botId, newCommand, userId);
+
+    let imagePayload = null;
+    try {
+      imagePayload = extractImagePayload(req);
+    } catch (imgError) {
+      return res.status(400).json({ error: imgError.message });
+    }
+
+    if (imagePayload) {
+      const imageVisionContext = await getImageVisionContext(botId, newCommand);
+      const visionResult = await analyzeImageWithVision(message, imagePayload, imageVisionContext);
+      responseContext = injectVisionIntoContext(responseContext, visionResult, imageVisionContext);
+    }
+
     const reply = await askAI(message, responseContext, history);
 
     history.push({ role: 'user', content: message });
@@ -506,6 +553,16 @@ app.post('/chat', resolveBotByApiKey, async (req, res) => {
     console.error('POST /chat error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Image file is too large (max 10MB)' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
 });
 
 // ---------- Публичные эндпоинты ----------

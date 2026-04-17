@@ -1,0 +1,283 @@
+openapi: 3.0.3
+info:
+  title: Multi-Bot — Partner Runtime (чат)
+  version: "1.0.0"
+  description: |
+    Контракт **runtime** для встраивания чата с ботом на стороне партнёра (веб, мобильное приложение, бэкенд-прокси и т.д.).
+
+    ## Сессии
+
+    Да, **сессии есть и хранятся на сервере**.
+
+    - Ключ сессии: пара **`(userId, bot)`**, где `bot` определяется автоматически по заголовку **`x-api-key`** (это API-ключ конкретного бота).
+    - **`userId`** — любая непустая строка, которую задаёт интегратор: внутренний ID пользователя, анонимный UUID, id чата в вашей CRM и т.п.
+    - **Один и тот же `userId` + тот же ключ бота** → продолжение **одного** диалога: сервер подгружает сохранённую историю и последнюю «команду» сценария (`lastCommand`), дополняет историю ответом и снова сохраняет.
+    - **Новый `userId`** → новая ветка диалога (пустая история, старт с `/start` по умолчанию на стороне логики бота).
+    - Поле **`message`** — текст текущего сообщения пользователя (один запрос = один пользовательский реплика + один ответ ассистента в истории).
+
+    ## Аутентификация
+
+    В каждом запросе к `/chat` передаётся заголовок **`x-api-key`** — значение поля `api_key` бота из админки. По нему сервер находит `botId` и проверяет, что бот активен.
+
+    ## Браузер и CORS
+
+    При вызове из браузера origin партнёра должен быть разрешён политикой CORS на runtime-сервере (иначе запрос упрётся в preflight / network error).
+
+    ## Рабочий хост (production)
+
+    База API (схема + хост, без слэша в конце): `https://aiasol-production-c345.up.railway.app`
+
+    - Чат: **POST** `https://aiasol-production-c345.up.railway.app/chat`
+    - Этот же контракт в JSON (Swagger / codegen): **GET** `https://aiasol-production-c345.up.railway.app/spec` — без заголовка `x-api-key`.
+
+servers:
+  - url: https://aiasol-production-c345.up.railway.app
+    description: Production (Railway)
+ 
+
+tags:
+  - name: Chat
+    description: Обмен сообщениями с ботом
+  - name: Meta
+    description: Служебные эндпоинты runtime
+
+paths:
+  /spec:
+    get:
+      tags: [Meta]
+      operationId: getOpenApiSpec
+      summary: OpenAPI этой спецификации в JSON
+      description: |
+        Возвращает тот же контракт, что и этот файл, в формате JSON (удобно для Swagger UI, Postman, генераторов клиента).
+        Ключ бота не нужен.
+      responses:
+        "200":
+          description: Успешно (тело — объект OpenAPI 3.0)
+          content:
+            application/json:
+              schema:
+                type: object
+        "503":
+          description: Спека на сервере не загрузилась
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "OpenAPI spec unavailable"
+
+  /chat:
+    post:
+      tags: [Chat]
+      operationId: postChat
+      summary: Отправить сообщение пользователя
+      description: |
+        Принимает текст сообщения и идентификатор пользователя со стороны партнёра.
+        Возвращает ответ бота и **актуальное состояние сессии** после обработки (история и `lastCommand`).
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+            examples:
+              firstMessage:
+                summary: Первое сообщение в новой ветке
+                value:
+                  userId: "partner-user-550e8400-e29b-41d4-a716-446655440000"
+                  message: "Привет"
+              continueThread:
+                summary: Продолжение того же диалога
+                value:
+                  userId: "partner-user-550e8400-e29b-41d4-a716-446655440000"
+                  message: "А расскажи подробнее"
+              withImageUrl:
+                summary: Анализ фото еды по URL
+                value:
+                  userId: "partner-user-550e8400-e29b-41d4-a716-446655440000"
+                  message: "Оцени калории и БЖУ"
+                  imageUrl: "https://example.com/food.jpg"
+              withImageBase64:
+                summary: Анализ фото еды в base64
+                value:
+                  userId: "partner-user-550e8400-e29b-41d4-a716-446655440000"
+                  message: "Что это за блюдо и сколько тут калорий?"
+                  imageBase64: "/9j/4AAQSkZJRgABAQAAAQABAAD..."
+                  imageMimeType: "image/jpeg"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ChatRequestMultipart"
+      responses:
+        "200":
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+              examples:
+                ok:
+                  value:
+                    reply: "Здравствуйте! Чем могу помочь?"
+                    botId: 3
+                    session:
+                      lastCommand: "/start"
+                      history:
+                        - role: "user"
+                          content: "Привет"
+                        - role: "assistant"
+                          content: "Здравствуйте! Чем могу помочь?"
+        "400":
+          description: Нет обязательных полей в теле
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "userId and message are required"
+        "401":
+          description: Нет или неверный API-ключ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missingKey:
+                  value:
+                    error: "x-api-key header is required"
+                invalidKey:
+                  value:
+                    error: "Invalid API key"
+        "403":
+          description: Бот выключен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "Bot is inactive"
+        "500":
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "Internal server error"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API-ключ бота (из админки).
+
+  schemas:
+    ChatRequest:
+      type: object
+      required: [userId, message]
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          description: Идентификатор пользователя/чата **на стороне партнёра**; задаёт ветку сессии вместе с ключом бота.
+        message:
+          type: string
+          minLength: 1
+          description: Текст сообщения пользователя.
+        displayName:
+          type: string
+          description: Отображаемое имя пользователя со стороны партнёра.
+        username:
+          type: string
+          description: Ник/логин пользователя (можно без @).
+        imageUrl:
+          type: string
+          format: uri
+          description: URL изображения (если фото передаётся ссылкой).
+        imageBase64:
+          type: string
+          description: Изображение в base64 (можно как raw base64 или data URL).
+        imageMimeType:
+          type: string
+          description: MIME-тип для `imageBase64`, если base64 передан без префикса data URL.
+
+    ChatRequestMultipart:
+      type: object
+      required: [userId, message]
+      properties:
+        userId:
+          type: string
+          minLength: 1
+          description: Идентификатор пользователя/чата **на стороне партнёра**.
+        message:
+          type: string
+          minLength: 1
+          description: Текст сообщения пользователя.
+        displayName:
+          type: string
+          description: Отображаемое имя пользователя со стороны партнёра.
+        username:
+          type: string
+          description: Ник/логин пользователя (можно без @).
+        image:
+          type: string
+          format: binary
+          description: Файл изображения для vision-анализа.
+        imageUrl:
+          type: string
+          format: uri
+          description: Альтернативно можно передать URL изображения вместо файла.
+        imageBase64:
+          type: string
+          description: Альтернативно можно передать изображение в base64.
+        imageMimeType:
+          type: string
+          description: MIME-тип для `imageBase64`, если base64 передан без data URL.
+
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+
+    SessionState:
+      type: object
+      required: [lastCommand, history]
+      properties:
+        lastCommand:
+          type: string
+          description: |
+            Последняя распознанная «команда»/интент сценария после классификации (например `/start`, `/help`).
+        history:
+          type: array
+          description: Полная история диалога на момент ответа (включая только что добавленную пару user/assistant).
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+
+    ChatResponse:
+      type: object
+      required: [reply, botId, session]
+      properties:
+        reply:
+          type: string
+          description: >
+            Текст последнего ответа ассистента; совпадает с последним элементом
+            history с полем role = assistant.
+        botId:
+          type: integer
+          description: Внутренний идентификатор бота на платформе (для отладки и логов).
+        session:
+          $ref: "#/components/schemas/SessionState"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
