@@ -38,8 +38,21 @@ function verifyPassword(password, storedHash) {
   }
 
   const [salt, expectedHash] = storedHash.split(':');
-  const actualHash = crypto.scryptSync(String(password), salt, 64).toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(actualHash, 'hex'), Buffer.from(expectedHash, 'hex'));
+  if (!salt || !expectedHash) {
+    return false;
+  }
+
+  try {
+    const actualHash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+    const a = Buffer.from(actualHash, 'hex');
+    const b = Buffer.from(expectedHash, 'hex');
+    if (a.length !== b.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
 }
 
 module.exports = {

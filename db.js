@@ -4,6 +4,7 @@ console.log('ENV MYSQLHOST:', process.env.MYSQLHOST);
 console.log('ENV MYSQLPORT:', process.env.MYSQLPORT);
 
 const mysql = require('mysql2/promise');
+const { hashPassword } = require('./security');
 
 const dbConfig = {
   host: process.env.MYSQLHOST,
@@ -212,12 +213,50 @@ async function initDB() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
 
+    await initPlatformAuth(connection);
+
     console.log('✅ Database tables checked/created.');
     connection.release();
   } catch (err) {
     console.error('❌ Error initializing database:', err);
     throw err; // Re-throw to stop application startup
   }
+}
+
+async function initPlatformAuth(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS admins (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      username VARCHAR(255) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      role VARCHAR(50) NOT NULL DEFAULT 'admin',
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  const [rows] = await connection.query('SELECT id FROM admins LIMIT 1');
+  if (rows.length > 0) {
+    return;
+  }
+
+  const username = process.env.ADMIN_USER;
+  const password = process.env.ADMIN_PASS;
+  if (!username || !password) {
+    console.warn(
+      '⚠️ Таблица admins пуста. Задай ADMIN_USER и ADMIN_PASS в Railway — создастся первый super_admin.'
+    );
+    return;
+  }
+
+  const passwordHash = hashPassword(password);
+  await connection.query(
+    `INSERT INTO admins (username, password_hash, role, is_active)
+     VALUES (?, ?, 'super_admin', 1)`,
+    [username, passwordHash]
+  );
+  console.log(`✅ Bootstrap super_admin: ${username}`);
 }
 
 module.exports = {
