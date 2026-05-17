@@ -9,7 +9,7 @@ const {
   injectVisionIntoContext,
 } = require('./context');
 const { pool } = require('./db');
-const { ensureUser, touchUser, addMessage, deleteUserMessages, listUsersForBot } = require('./user');
+const { ensureUser, touchUser, addMessage, deleteUserContext, listUsersForBot } = require('./user');
 
 // Global Control Bot (Optional, for monitoring)
 const controlToken = process.env.CONTROL_BOT_TOKEN;
@@ -143,27 +143,24 @@ function startBot(botRow) {
           return;
         }
 
-        // Register / update user info
         await ensureUser(conversationUserId, userName, userHandle);
-        await touchUser(conversationUserId);
-        await addMessage(conversationUserId, 'user', userMessage, botId);
 
         if (userMessage === '/reset') {
-          // Reset session for THIS bot
           await pool.query('DELETE FROM sessions WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
-          // We do NOT delete messages history globally, maybe just for this context? 
-          // Prompt says "Вся история переписки удалена". 
-          // Let's keep it safe and delete messages for this bot only? 
-          // Or global? Let's delete for this bot to be safe in multi-bot env.
           await pool.query('DELETE FROM messages WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
+          await deleteUserContext(conversationUserId);
+          await touchUser(conversationUserId);
 
-          console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed.`);
-          bot.sendMessage(chatId, '🔄 История диалога с этим ботом очищена. Чем могу помочь?');
+          console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed (session, messages, user_context).`);
+          bot.sendMessage(chatId, '🔄 История диалога и персональный контекст очищены. Чем могу помочь?');
           if (controlBot && controlChatId) {
             controlBot.sendMessage(controlChatId, `🔄 Сброс (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId})`);
           }
           return;
         }
+
+        await touchUser(conversationUserId);
+        await addMessage(conversationUserId, 'user', userMessage, botId);
 
         const session = await getSession(conversationUserId, botId);
         const currentCommand = session.last_command || '/start';
