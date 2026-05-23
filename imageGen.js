@@ -17,9 +17,28 @@ function getContextMessageLimit() {
 }
 
 function getMaxStoredImageBytes() {
-  const parsed = parseInt(process.env.MAX_STORED_IMAGE_BYTES || '1572864', 10);
-  if (Number.isNaN(parsed) || parsed < 1) return 1572864;
+  // MEDIUMTEXT ~16MB; дефолт 14MB — data URL после генерации часто 2–8MB
+  const parsed = parseInt(process.env.MAX_STORED_IMAGE_BYTES || '14680064', 10);
+  if (Number.isNaN(parsed) || parsed < 1) return 14680064;
   return parsed;
+}
+
+function resolveStoredImage(imageDataUrl) {
+  if (!imageDataUrl || !String(imageDataUrl).trim()) {
+    return null;
+  }
+  const str = String(imageDataUrl).trim();
+  if (str.startsWith('http://') || str.startsWith('https://')) {
+    return str;
+  }
+  const trimmed = trimImageForStorage(str);
+  if (trimmed) {
+    return trimmed;
+  }
+  console.warn(
+    `[imageGen] Image too large for MAX_STORED_IMAGE_BYTES, storing anyway for /correct_image_your (${Buffer.byteLength(str, 'utf8')} bytes)`
+  );
+  return str;
 }
 
 function sliceHistoryForMeta(history, limit) {
@@ -87,7 +106,7 @@ async function runImagePipeline({
       ok: true,
       replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
       imageDataUrl: generated.imageUrl,
-      storedImage: trimImageForStorage(generated.imageUrl),
+      storedImage: resolveStoredImage(generated.imageUrl),
     };
   }
 
@@ -121,7 +140,7 @@ async function runImagePipeline({
       ok: true,
       replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
       imageDataUrl: generated.imageUrl,
-      storedImage: trimImageForStorage(generated.imageUrl),
+      storedImage: resolveStoredImage(generated.imageUrl),
     };
   }
 
@@ -142,7 +161,7 @@ async function runImagePipeline({
       ok: true,
       replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
       imageDataUrl: generated.imageUrl,
-      storedImage: trimImageForStorage(generated.imageUrl),
+      storedImage: resolveStoredImage(generated.imageUrl),
     };
   }
 

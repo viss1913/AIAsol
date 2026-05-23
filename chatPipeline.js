@@ -135,12 +135,19 @@ async function processUserMessage({
     history.push({ role: 'user', content: userMessage });
     history.push({ role: 'assistant', content: assistantEntry });
 
-    const storedImage =
-      imageResult.ok && imageResult.storedImage !== undefined
-        ? imageResult.storedImage
-        : imageResult.ok
-          ? imageResult.imageDataUrl
-          : lastGeneratedImage;
+    const storedImage = imageResult.ok
+      ? imageResult.storedImage || imageResult.imageDataUrl || lastGeneratedImage
+      : lastGeneratedImage;
+
+    if (imageResult.ok && !storedImage) {
+      console.warn(
+        `[chatPipeline] Image generated but nothing to store (user=${userId}, bot=${botId}, cmd=${newCommand})`
+      );
+    } else if (imageResult.ok && storedImage) {
+      console.log(
+        `[chatPipeline] last_generated_image saved (${Buffer.byteLength(String(storedImage), 'utf8')} bytes, user=${userId})`
+      );
+    }
 
     await saveSession(userId, botId, newCommand, history, storedImage);
 
