@@ -60,4 +60,4 @@ MAX_STORED_IMAGE_BYTES=1572864
 
 ## БД
 
-`sessions.last_generated_image` — MEDIUMTEXT, последняя картинка бота для `/correct_image_your`. Если data URL больше `MAX_STORED_IMAGE_BYTES`, в сессию не пишется (в лог warning).
+`sessions.last_generated_image` + `last_generated_image_at` — последняя картинка бота для `/correct_image_your`. TTL: `LAST_GENERATED_IMAGE_TTL_MINUTES` (по умолчанию **10**), после истечения поле очищается.

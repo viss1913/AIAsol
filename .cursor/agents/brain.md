@@ -68,7 +68,7 @@ description: Эксперт по бэкенду AI_Asol (BankFuture). Знает
 Состояние диалога на пару `(user_id, bot_id)`.
 - `last_command` — последняя выбранная команда (default `/start`)
 - `history` — JSON-массив `{ role, content }` для OpenRouter
-- `last_generated_image` — последняя картинка бота (для `/correct_image_your`)
+- `last_generated_image` + `last_generated_image_at` — для `/correct_image_your` (TTL `LAST_GENERATED_IMAGE_TTL_MINUTES`, default 10)
 - `updated_at`
 
 ### `users`
@@ -199,6 +199,7 @@ response для newCommand (fallback /start)
 | `OPENROUTER_IMAGE_MODALITIES` | `image` или `image,text` |
 | `IMAGE_PROMPT_CONTEXT_MESSAGES` | Сколько реплик history для `/correct_image_my` |
 | `MAX_STORED_IMAGE_BYTES` | Лимит `last_generated_image` в session |
+| `LAST_GENERATED_IMAGE_TTL_MINUTES` | Срок хранения картинки для правки (default 10) |
 
 SSL к MySQL включается автоматически, если host не localhost.
 

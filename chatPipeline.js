@@ -8,6 +8,39 @@ const {
 } = require('./context');
 const { isImageCommand, runImagePipeline } = require('./imageGen');
 
+function getLastGeneratedImageTtlMinutes() {
+  const parsed = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10);
+  if (Number.isNaN(parsed) || parsed < 1) return 10;
+  return parsed;
+}
+
+function isLastGeneratedImageExpired(imageAt) {
+  if (!imageAt) return true;
+  const ts = imageAt instanceof Date ? imageAt.getTime() : new Date(imageAt).getTime();
+  if (Number.isNaN(ts)) return true;
+  const ttlMs = getLastGeneratedImageTtlMinutes() * 60 * 1000;
+  return Date.now() - ts > ttlMs;
+}
+
+async function resolveLastGeneratedImage(row, userId, botId) {
+  const raw = row.last_generated_image || null;
+  if (!raw) return null;
+
+  if (!isLastGeneratedImageExpired(row.last_generated_image_at)) {
+    return raw;
+  }
+
+  console.log(
+    `[chatPipeline] last_generated_image expired (user=${userId}, bot=${botId}, ttl=${getLastGeneratedImageTtlMinutes()}m)`
+  );
+  await pool.query(
+    `UPDATE sessions SET last_generated_image = NULL, last_generated_image_at = NULL
+     WHERE user_id = ? AND bot_id = ?`,
+    [String(userId), botId]
+  );
+  return null;
+}
+
 function normalizeHistory(history) {
   if (history == null) return [];
   if (typeof history === 'string') {
@@ -28,10 +61,11 @@ async function loadSession(userId, botId) {
   );
   if (rows.length > 0) {
     const row = rows[0];
+    const lastGeneratedImage = await resolveLastGeneratedImage(row, userId, botId);
     return {
       last_command: row.last_command || '/start',
       history: normalizeHistory(row.history),
-      last_generated_image: row.last_generated_image || null,
+      last_generated_image: lastGeneratedImage,
       after_reset: Boolean(row.after_reset),
     };
   }
@@ -45,12 +79,13 @@ async function loadSession(userId, botId) {
 
 async function seedSessionAfterReset(userId, botId) {
   await pool.query(
-    `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, after_reset)
-     VALUES (?, ?, '/start', '[]', NULL, 1)
+    `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, last_generated_image_at, after_reset)
+     VALUES (?, ?, '/start', '[]', NULL, NULL, 1)
      ON DUPLICATE KEY UPDATE
        last_command = '/start',
        history = '[]',
        last_generated_image = NULL,
+       last_generated_image_at = NULL,
        after_reset = 1`,
     [String(userId), botId]
   );
@@ -59,13 +94,15 @@ async function seedSessionAfterReset(userId, botId) {
 async function saveSession(userId, botId, lastCommand, history, lastGeneratedImage = undefined) {
   const hasImageUpdate = lastGeneratedImage !== undefined;
   if (hasImageUpdate) {
+    const imageAt = lastGeneratedImage ? new Date() : null;
     await pool.query(
-      `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, after_reset)
-       VALUES (?, ?, ?, ?, ?, 0)
+      `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, last_generated_image_at, after_reset)
+       VALUES (?, ?, ?, ?, ?, ?, 0)
        ON DUPLICATE KEY UPDATE
          last_command = VALUES(last_command),
          history = VALUES(history),
          last_generated_image = VALUES(last_generated_image),
+         last_generated_image_at = VALUES(last_generated_image_at),
          after_reset = 0`,
       [
         String(userId),
@@ -73,6 +110,7 @@ async function saveSession(userId, botId, lastCommand, history, lastGeneratedIma
         lastCommand,
         JSON.stringify(history),
         lastGeneratedImage,
+        imageAt,
       ]
     );
     return;

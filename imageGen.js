@@ -112,9 +112,10 @@ async function runImagePipeline({
 
   if (command === '/correct_image_your') {
     if (!lastGeneratedImage) {
+      const ttlMin = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10) || 10;
       return {
         ok: false,
-        replyText: 'Сначала нужно сгенерировать изображение, потом можно его править.',
+        replyText: `Сначала сгенерируй изображение. Править последнюю картинку бота можно в течение ${ttlMin} мин после генерации.`,
         imageDataUrl: null,
       };
     }
