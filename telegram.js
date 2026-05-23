@@ -1,7 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const { processUserMessage } = require('./chatPipeline');
+const { processUserMessage, seedSessionAfterReset } = require('./chatPipeline');
 const { pool } = require('./db');
 const { ensureUser, touchUser, addMessage, deleteUserContext, listUsersForBot } = require('./user');
 
@@ -135,9 +135,12 @@ function startBot(botRow) {
           await pool.query('DELETE FROM sessions WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
           await pool.query('DELETE FROM messages WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
           await deleteUserContext(conversationUserId);
+          await seedSessionAfterReset(conversationUserId, botId);
           await touchUser(conversationUserId);
 
-          console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed (session, messages, user_context).`);
+          console.log(
+            `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed; next message → /start`
+          );
           bot.sendMessage(chatId, '🔄 История диалога и персональный контекст очищены. Чем могу помочь?');
           if (controlBot && controlChatId) {
             controlBot.sendMessage(controlChatId, `🔄 Сброс (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId})`);

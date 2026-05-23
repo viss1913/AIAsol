@@ -167,6 +167,16 @@ async function initDB() {
       console.log('✅ sessions updated with last_generated_image.');
     }
 
+    try {
+      await connection.query('SELECT after_reset FROM sessions LIMIT 1');
+    } catch (e) {
+      console.log('⚠️ Column "after_reset" missing in sessions. Adding...');
+      await connection.query(
+        'ALTER TABLE sessions ADD COLUMN after_reset TINYINT(1) NOT NULL DEFAULT 0 AFTER last_generated_image'
+      );
+      console.log('✅ sessions updated with after_reset.');
+    }
+
     // 4. Users: одна строка на человека (Telegram id / partner userId). Список в админке
     // строится по bot_id через messages + sessions (см. listUsersForBot в user.js).
     await connection.query(`

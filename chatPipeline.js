@@ -32,25 +32,41 @@ async function loadSession(userId, botId) {
       last_command: row.last_command || '/start',
       history: normalizeHistory(row.history),
       last_generated_image: row.last_generated_image || null,
+      after_reset: Boolean(row.after_reset),
     };
   }
   return {
     last_command: '/start',
     history: [],
     last_generated_image: null,
+    after_reset: false,
   };
+}
+
+async function seedSessionAfterReset(userId, botId) {
+  await pool.query(
+    `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, after_reset)
+     VALUES (?, ?, '/start', '[]', NULL, 1)
+     ON DUPLICATE KEY UPDATE
+       last_command = '/start',
+       history = '[]',
+       last_generated_image = NULL,
+       after_reset = 1`,
+    [String(userId), botId]
+  );
 }
 
 async function saveSession(userId, botId, lastCommand, history, lastGeneratedImage = undefined) {
   const hasImageUpdate = lastGeneratedImage !== undefined;
   if (hasImageUpdate) {
     await pool.query(
-      `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, after_reset)
+       VALUES (?, ?, ?, ?, ?, 0)
        ON DUPLICATE KEY UPDATE
          last_command = VALUES(last_command),
          history = VALUES(history),
-         last_generated_image = VALUES(last_generated_image)`,
+         last_generated_image = VALUES(last_generated_image),
+         after_reset = 0`,
       [
         String(userId),
         botId,
@@ -63,9 +79,12 @@ async function saveSession(userId, botId, lastCommand, history, lastGeneratedIma
   }
 
   await pool.query(
-    `INSERT INTO sessions (user_id, bot_id, last_command, history)
-     VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE last_command = VALUES(last_command), history = VALUES(history)`,
+    `INSERT INTO sessions (user_id, bot_id, last_command, history, after_reset)
+     VALUES (?, ?, ?, ?, 0)
+     ON DUPLICATE KEY UPDATE
+       last_command = VALUES(last_command),
+       history = VALUES(history),
+       after_reset = 0`,
     [String(userId), botId, lastCommand, JSON.stringify(history)]
   );
 }
@@ -91,8 +110,14 @@ async function processUserMessage({
   const history = session.history;
   const lastGeneratedImage = session.last_generated_image;
 
-  const classifierContext = await getClassifierContext(botId, lastCmd);
-  const newCommand = await classifyIntent(userMessage, classifierContext);
+  let newCommand;
+  if (session.after_reset) {
+    newCommand = '/start';
+    console.log(`[chatPipeline] after_reset → force /start (user=${userId}, bot=${botId})`);
+  } else {
+    const classifierContext = await getClassifierContext(botId, lastCmd);
+    newCommand = await classifyIntent(userMessage, classifierContext);
+  }
 
   if (isImageCommand(newCommand)) {
     const imageResult = await runImagePipeline({
@@ -168,5 +193,6 @@ module.exports = {
   processUserMessage,
   loadSession,
   saveSession,
+  seedSessionAfterReset,
   normalizeHistory,
 };
