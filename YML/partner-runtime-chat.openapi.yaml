@@ -294,6 +294,17 @@ components:
           description: Внутренний идентификатор бота на платформе (для отладки и логов).
         session:
           $ref: "#/components/schemas/SessionState"
+        imageUrl:
+          type: string
+          description: >
+            Data URL или URL сгенерированного изображения (если сработала команда
+            /create_image, /correct_image_my или /correct_image_your).
+        imageAction:
+          type: string
+          description: Команда-маршрут, по которой было сгенерировано изображение.
+        visionDebug:
+          type: object
+          description: Отладочная информация vision-анализа (если DEBUG_VISION_RESPONSE=1).
 
     ErrorResponse:
       type: object

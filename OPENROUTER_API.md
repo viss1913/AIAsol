@@ -300,7 +300,9 @@ async function askAI(userMessage, responseContext, history = []) {
 
 ## Генерация изображений
 
-**⚠️ Важно:** OpenRouter **НЕ поддерживает** генерацию изображений. Сервис специализируется только на текстовых LLM моделях (чат-боты, анализ текста и т.д.).
+OpenRouter поддерживает генерацию через тот же endpoint `POST /v1/chat/completions` с параметром `modalities` (модели с `output_modalities=image`). В проекте: `ai.generateImageOpenRouter`, env `OPENROUTER_IMAGE_MODEL`, см. `IMAGE_GENERATION.md`.
+
+**Устаревшая заметка (ниже — альтернативы вне OpenRouter):**
 
 ### Альтернативы для генерации изображений
 

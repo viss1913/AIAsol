@@ -1,13 +1,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
-const { classifyIntent, askAI, analyzeImageWithVision } = require('./ai');
-const {
-  getClassifierContext,
-  getResponseContext,
-  getImageVisionContext,
-  injectVisionIntoContext,
-} = require('./context');
+const { processUserMessage } = require('./chatPipeline');
 const { pool } = require('./db');
 const { ensureUser, touchUser, addMessage, deleteUserContext, listUsersForBot } = require('./user');
 
@@ -72,26 +66,18 @@ async function buildTelegramImageDataUrl(bot, msg, fileId) {
   return `data:${mimeType};base64,${base64}`;
 }
 
-// Helper: Get Session from MySQL
-async function getSession(chatId, botId) {
-  const [rows] = await pool.query(
-    'SELECT * FROM sessions WHERE user_id = ? AND bot_id = ?',
-    [String(chatId), botId]
-  );
-  if (rows.length > 0) {
-    return rows[0];
-  }
-  return { last_command: '/start', history: [] };
+function dataUrlToBuffer(dataUrl) {
+  const match = /^data:image\/[\w+.-]+;base64,(.+)$/i.exec(String(dataUrl));
+  if (!match) return null;
+  return Buffer.from(match[1], 'base64');
 }
 
-// Helper: Save Session to MySQL
-async function saveSession(chatId, botId, lastCommand, history) {
-  await pool.query(
-    `INSERT INTO sessions (user_id, bot_id, last_command, history)
-     VALUES (?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE last_command = VALUES(last_command), history = VALUES(history)`,
-    [String(chatId), botId, lastCommand, JSON.stringify(history)]
-  );
+function formatTelegramHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
 }
 
 // Start a single bot instance
@@ -162,70 +148,59 @@ function startBot(botRow) {
         await touchUser(conversationUserId);
         await addMessage(conversationUserId, 'user', userMessage, botId);
 
-        const session = await getSession(conversationUserId, botId);
-        const currentCommand = session.last_command || '/start';
-        let history = session.history || [];
-        if (!Array.isArray(history)) history = [];
+        let imagePayload = null;
+        if (imageFileId) {
+          try {
+            imagePayload = await buildTelegramImageDataUrl(bot, msg, imageFileId);
+          } catch (imgErr) {
+            console.error(
+              `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Image download failed:`,
+              imgErr.message || imgErr
+            );
+          }
+        }
 
-        const classifierContext = await getClassifierContext(botId, currentCommand);
-        const newCommand = await classifyIntent(userMessage, classifierContext);
+        const result = await processUserMessage({
+          botId,
+          userId: conversationUserId,
+          userMessage,
+          imagePayload,
+        });
+
         console.log(
-          `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Current: ${currentCommand} → New: ${newCommand}`
+          `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Command: ${result.newCommand} type: ${result.type}`
         );
 
         if (controlBot && controlChatId) {
           const cleanChatId = controlChatId.trim();
-          const messageText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (chat:${chatId}, user:${conversationUserId})\n💬 "${userMessage}"\n🔄 ${currentCommand} → ${newCommand}\n`;
+          const notifyText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (chat:${chatId}, user:${conversationUserId})\n💬 "${userMessage}"\n🔄 → ${result.newCommand}${result.type === 'image' ? ' 🖼' : ''}\n`;
 
-          controlBot.sendMessage(cleanChatId, messageText)
+          controlBot
+            .sendMessage(cleanChatId, notifyText)
             .then(() => console.log(`[Control Bot] ✅ Notification sent to ${cleanChatId}`))
             .catch((err) => console.error(`[Control Bot] ❌ Failed to send notification: ${err.message}`));
-        } else {
-          console.log(`[Control Bot] ⚠️ Skipped notification. Bot: ${!!controlBot}, ChatID: ${!!controlChatId}`);
         }
 
-        let responseContext = await getResponseContext(botId, newCommand, conversationUserId);
-        console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [DEBUG] Response Context Length: ${responseContext.length}`);
-        console.log(`[Bot #${botId}] [DEBUG] Response Context Preview: ${responseContext.substring(0, 50)}...`);
-
-        if (imageFileId) {
-          console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [VISION] triggered fileId=${imageFileId}`);
-          try {
-            const imagePayload = await buildTelegramImageDataUrl(bot, msg, imageFileId);
-            const imageVisionContext = await getImageVisionContext(botId, newCommand);
-            const vision = await analyzeImageWithVision(
-              userMessage,
-              imagePayload,
-              imageVisionContext
-            );
-            responseContext = injectVisionIntoContext(responseContext, vision.text, imageVisionContext);
-            console.log(
-              `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [VISION] injected ok=${vision.ok} length=${vision.text.length} code=${vision.errorCode || 'none'}`
-            );
-          } catch (visionErr) {
-            console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] [VISION] failed:`, visionErr.message || visionErr);
-          }
-        }
-
-        const reply = await askAI(userMessage, responseContext, history);
-        console.log(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Reply: ${reply}`);
-
-        // Save assistant reply
-        await addMessage(conversationUserId, 'assistant', reply, botId);
+        await addMessage(conversationUserId, 'assistant', result.reply, botId);
         await touchUser(conversationUserId);
 
-        history.push({ role: 'user', content: userMessage });
-        history.push({ role: 'assistant', content: reply });
-        await saveSession(conversationUserId, botId, newCommand, history);
-
-        // Format for Telegram
-        const formattedReply = reply
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-
-        bot.sendMessage(chatId, formattedReply, { parse_mode: 'HTML' });
+        if (result.type === 'image' && result.imageDataUrl) {
+          const caption = formatTelegramHtml(result.reply);
+          const photoOptions = { caption, parse_mode: 'HTML' };
+          if (String(result.imageDataUrl).startsWith('data:')) {
+            const buffer = dataUrlToBuffer(result.imageDataUrl);
+            if (buffer) {
+              await bot.sendPhoto(chatId, buffer, photoOptions);
+            } else {
+              await bot.sendMessage(chatId, result.reply);
+            }
+          } else {
+            await bot.sendPhoto(chatId, result.imageDataUrl, photoOptions);
+          }
+        } else {
+          const formattedReply = formatTelegramHtml(result.reply);
+          await bot.sendMessage(chatId, formattedReply, { parse_mode: 'HTML' });
+        }
       } catch (error) {
         console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Error:`, error);
         bot.sendMessage(chatId, 'Произошла ошибка, попробуйте позже.');

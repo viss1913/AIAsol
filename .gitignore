@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.railway.test
 .DS_Store
 output.txt
 *.log

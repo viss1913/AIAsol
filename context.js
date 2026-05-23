@@ -122,6 +122,25 @@ async function getClassifierContext(botId, command) {
   }
 }
 
+async function getCommandResponse(botId, command) {
+  try {
+    let [cmdRes] = await pool.query(
+      'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
+      [command, botId]
+    );
+    if (cmdRes.length === 0) {
+      [cmdRes] = await pool.query(
+        'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
+        ['/start', botId]
+      );
+    }
+    return cmdRes[0]?.response || '';
+  } catch (err) {
+    console.error(`Error getting command response for bot ${botId}:`, err);
+    return '';
+  }
+}
+
 async function getResponseContext(botId, command, userId = null) {
   try {
     const [bots] = await pool.query(
@@ -216,6 +235,7 @@ module.exports = {
   updateContext,
   deleteContext,
   getClassifierContext,
+  getCommandResponse,
   getResponseContext,
   getImageVisionContext,
   injectVisionIntoContext,
