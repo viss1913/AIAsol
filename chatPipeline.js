@@ -6,7 +6,12 @@ const {
   getImageVisionContext,
   injectVisionIntoContext,
 } = require('./context');
-const { isImageCommand, runImagePipeline } = require('./imageGen');
+const { isImageCommand, runImagePipeline, isDebugImageGen } = require('./imageGen');
+const {
+  saveUserImage,
+  resolveLastUserImage,
+  wantsEditOfBotImage,
+} = require('./imageAssets');
 
 function getLastGeneratedImageTtlMinutes() {
   const parsed = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10);
@@ -62,10 +67,12 @@ async function loadSession(userId, botId) {
   if (rows.length > 0) {
     const row = rows[0];
     const lastGeneratedImage = await resolveLastGeneratedImage(row, userId, botId);
+    const lastUserImage = await resolveLastUserImage(row, userId, botId);
     return {
       last_command: row.last_command || '/start',
       history: normalizeHistory(row.history),
       last_generated_image: lastGeneratedImage,
+      last_user_image: lastUserImage,
       after_reset: Boolean(row.after_reset),
     };
   }
@@ -73,19 +80,22 @@ async function loadSession(userId, botId) {
     last_command: '/start',
     history: [],
     last_generated_image: null,
+    last_user_image: null,
     after_reset: false,
   };
 }
 
 async function seedSessionAfterReset(userId, botId) {
   await pool.query(
-    `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, last_generated_image_at, after_reset)
-     VALUES (?, ?, '/start', '[]', NULL, NULL, 1)
+    `INSERT INTO sessions (user_id, bot_id, last_command, history, last_generated_image, last_generated_image_at, last_user_image, last_user_image_at, after_reset)
+     VALUES (?, ?, '/start', '[]', NULL, NULL, NULL, NULL, 1)
      ON DUPLICATE KEY UPDATE
        last_command = '/start',
        history = '[]',
        last_generated_image = NULL,
        last_generated_image_at = NULL,
+       last_user_image = NULL,
+       last_user_image_at = NULL,
        after_reset = 1`,
     [String(userId), botId]
   );
@@ -134,6 +144,16 @@ function buildAssistantHistoryEntry(replyText, isImage) {
   return replyText;
 }
 
+function shouldRerouteToCorrectYour(command, userMessage, lastGeneratedImage) {
+  if (String(process.env.IMAGE_EDIT_REROUTE || '1').trim() !== '1') {
+    return false;
+  }
+  if (command !== '/create_image' || !lastGeneratedImage) {
+    return false;
+  }
+  return wantsEditOfBotImage(userMessage);
+}
+
 /**
  * Unified chat processing for Partner API and Telegram.
  */
@@ -143,10 +163,15 @@ async function processUserMessage({
   userMessage,
   imagePayload = null,
 }) {
+  if (imagePayload) {
+    await saveUserImage(userId, botId, imagePayload);
+  }
+
   const session = await loadSession(userId, botId);
   const lastCmd = session.last_command || '/start';
   const history = session.history;
   const lastGeneratedImage = session.last_generated_image;
+  const lastUserImage = session.last_user_image;
 
   let newCommand;
   if (session.after_reset) {
@@ -157,6 +182,13 @@ async function processUserMessage({
     newCommand = await classifyIntent(userMessage, classifierContext);
   }
 
+  if (shouldRerouteToCorrectYour(newCommand, userMessage, lastGeneratedImage)) {
+    console.warn(
+      `[chatPipeline] reroute /create_image → /correct_image_your (user=${userId}, bot=${botId})`
+    );
+    newCommand = '/correct_image_your';
+  }
+
   if (isImageCommand(newCommand)) {
     const imageResult = await runImagePipeline({
       botId,
@@ -165,6 +197,7 @@ async function processUserMessage({
       history,
       imagePayload,
       lastGeneratedImage,
+      lastUserImage,
     });
 
     const replyText = imageResult.replyText;
@@ -189,6 +222,14 @@ async function processUserMessage({
 
     await saveSession(userId, botId, newCommand, history, storedImage);
 
+    const imageGenDebug = isDebugImageGen()
+      ? {
+          command: newCommand,
+          refSource: imageResult.refSource,
+          errorCode: imageResult.errorCode,
+        }
+      : undefined;
+
     return {
       type: imageResult.ok ? 'image' : 'error',
       newCommand,
@@ -197,6 +238,7 @@ async function processUserMessage({
       history,
       lastGeneratedImage: storedImage,
       visionDebug: { triggered: false, ok: null, errorCode: null },
+      imageGenDebug,
     };
   }
 
@@ -208,9 +250,9 @@ async function processUserMessage({
     errorCode: null,
   };
 
-  if (imagePayload) {
+  const imageVisionContext = await getImageVisionContext(botId, newCommand);
+  if (imagePayload && imageVisionContext.trim()) {
     visionDebug.triggered = true;
-    const imageVisionContext = await getImageVisionContext(botId, newCommand);
     const vision = await analyzeImageWithVision(userMessage, imagePayload, imageVisionContext);
     visionDebug.ok = vision.ok;
     visionDebug.errorCode = vision.errorCode;

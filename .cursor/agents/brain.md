@@ -30,6 +30,7 @@ description: Эксперт по бэкенду AI_Asol (BankFuture). Знает
 | `ai.js` | `classifyIntent`, `askAI`, vision, `prepareImageGenPrompt`, `generateImageOpenRouter` |
 | `context.js` | `getClassifierContext`, `getCommandResponse`, `getResponseContext`, vision-контексты |
 | `imageGen.js` | Пайплайн `/create_image`, `/correct_image_my`, `/correct_image_your` |
+| `imageAssets.js` | `last_user_image`, `resolveReferenceImage`, reroute, ключевые слова |
 | `chatPipeline.js` | `processUserMessage` — единая точка Telegram + Partner `/chat` |
 | `telegram.js` | Multi-bot polling, control-bot, `/reset`, `sendPhoto` при генерации |
 | `user.js` | `users`, `messages`, `user_context`, `listUsersForBot` |
@@ -68,7 +69,8 @@ description: Эксперт по бэкенду AI_Asol (BankFuture). Знает
 Состояние диалога на пару `(user_id, bot_id)`.
 - `last_command` — последняя выбранная команда (default `/start`)
 - `history` — JSON-массив `{ role, content }` для OpenRouter
-- `last_generated_image` + `last_generated_image_at` — для `/correct_image_your` (TTL `LAST_GENERATED_IMAGE_TTL_MINUTES`, default 10)
+- `last_generated_image` + `last_generated_image_at` — для `/correct_image_your` (TTL 10 мин)
+- `last_user_image` + `last_user_image_at` — фото пользователя из прошлого сообщения (TTL 30 мин)
 - `updated_at`
 
 ### `users`
@@ -133,18 +135,19 @@ response для newCommand (fallback /start)
 
 После `classifyIntent`, если `isImageCommand(newCommand)` → `imageGen.runImagePipeline` (см. `IMAGE_GENERATION.md`). **Не** вызываются `askAI` и food-vision.
 
-Промпты мета-LLM — поле `response` команды в `ai_commands` (`getCommandResponse`).
+Промпты мета-LLM — поле `response` команды (`getCommandResponse`, без fallback на `/start` для image-команд).
+
+Референсы: `imageAssets.resolveReferenceImage`. Reroute: `IMAGE_EDIT_REROUTE=1` — create → correct_your при правке свежей bot-картинки.
 
 ---
 
 ## Vision (анализ еды, не генерация)
 
-Только для **не-image** команд. Триггер: фото в Telegram или `image` / `imageUrl` / `imageBase64` в `POST /chat`.
+Только для **не-image** команд и только если в админке есть `{command}:image_vision` или команда в `VISION_COMMANDS`. **Нет** глобального fallback `image_vision` на `/start`.
 
-1. `getImageVisionContext(botId, newCommand)` — ищет ключи по порядку:
+1. `getImageVisionContext(botId, newCommand)` — ищет:
    - `{command}:image_vision`
-   - `image_vision`
-   - `/start:image_vision`
+   - `image_vision` — только если команда в `VISION_COMMANDS`
 2. `analyzeImageWithVision` — отдельный вызов OpenRouter с multimodal content
 3. `injectVisionIntoContext` — дописывает инструкцию и «Результат анализа изображения» в system prompt перед `askAI`
 
@@ -199,7 +202,10 @@ response для newCommand (fallback /start)
 | `OPENROUTER_IMAGE_MODALITIES` | `image` или `image,text` |
 | `IMAGE_PROMPT_CONTEXT_MESSAGES` | Сколько реплик history для `/correct_image_my` |
 | `MAX_STORED_IMAGE_BYTES` | Лимит `last_generated_image` в session |
-| `LAST_GENERATED_IMAGE_TTL_MINUTES` | Срок хранения картинки для правки (default 10) |
+| `LAST_GENERATED_IMAGE_TTL_MINUTES` | TTL bot-картинки (default 10) |
+| `LAST_USER_IMAGE_TTL_MINUTES` | TTL фото пользователя (default 30) |
+| `IMAGE_EDIT_REROUTE` | create → correct_your при правке (default 1) |
+| `DEBUG_IMAGE_GEN` | `imageGenDebug` в ответе API |
 
 SSL к MySQL включается автоматически, если host не localhost.
 

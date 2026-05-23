@@ -514,6 +514,9 @@ app.post('/chat', resolveBotByApiKey, upload.single('image'), async (req, res) =
     if (debugVision) {
       payload.visionDebug = result.visionDebug;
     }
+    if (result.imageGenDebug) {
+      payload.imageGenDebug = result.imageGenDebug;
+    }
     res.json(payload);
   } catch (err) {
     console.error('POST /chat error:', err);

@@ -187,6 +187,19 @@ async function initDB() {
       console.log('✅ sessions updated with last_generated_image_at.');
     }
 
+    try {
+      await connection.query('SELECT last_user_image FROM sessions LIMIT 1');
+    } catch (e) {
+      console.log('⚠️ Column "last_user_image" missing in sessions. Adding...');
+      await connection.query(
+        'ALTER TABLE sessions ADD COLUMN last_user_image MEDIUMTEXT NULL AFTER last_generated_image_at'
+      );
+      await connection.query(
+        'ALTER TABLE sessions ADD COLUMN last_user_image_at TIMESTAMP NULL AFTER last_user_image'
+      );
+      console.log('✅ sessions updated with last_user_image fields.');
+    }
+
     // 4. Users: одна строка на человека (Telegram id / partner userId). Список в админке
     // строится по bot_id через messages + sessions (см. listUsersForBot в user.js).
     await connection.query(`

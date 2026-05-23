@@ -1,10 +1,23 @@
 const { getCommandResponse } = require('./context');
 const { prepareImageGenPrompt, generateImageOpenRouter } = require('./ai');
-
-const IMAGE_COMMANDS = ['/create_image', '/correct_image_my', '/correct_image_your'];
+const {
+  IMAGE_COMMANDS,
+  resolveReferenceImage,
+  usesMetaPrompt,
+  imageByteLength,
+  getLastUserImageTtlMinutes,
+} = require('./imageAssets');
 
 const DEFAULT_REPLY_OK = 'Готово! Вот изображение.';
-const DEFAULT_REPLY_FAIL = 'Не удалось сгенерировать изображение. Попробуй ещё раз.';
+
+const DEFAULT_META_TEMPLATES = {
+  '/correct_image_my':
+    'Подготовь точный промпт для редактирования приложенного изображения пользователя. Сохрани ключевые элементы исходника, измени только то, что просит пользователь. Верни только промпт на английском.',
+  '/correct_image_your':
+    'Подготовь точный промпт для редактирования последней картинки, которую сгенерировал бот. Сохрани композицию и ракурс, измени только то, что просит пользователь. Верни только промпт на английском.',
+  '/create_image':
+    'Реалистичное изображение, высокая детализация, естественное освещение.',
+};
 
 function isImageCommand(command) {
   return IMAGE_COMMANDS.includes(String(command || '').trim());
@@ -17,7 +30,6 @@ function getContextMessageLimit() {
 }
 
 function getMaxStoredImageBytes() {
-  // MEDIUMTEXT ~16MB; дефолт 14MB — data URL после генерации часто 2–8MB
   const parsed = parseInt(process.env.MAX_STORED_IMAGE_BYTES || '14680064', 10);
   if (Number.isNaN(parsed) || parsed < 1) return 14680064;
   return parsed;
@@ -36,7 +48,7 @@ function resolveStoredImage(imageDataUrl) {
     return trimmed;
   }
   console.warn(
-    `[imageGen] Image too large for MAX_STORED_IMAGE_BYTES, storing anyway for /correct_image_your (${Buffer.byteLength(str, 'utf8')} bytes)`
+    `[imageGen] Image too large for MAX_STORED_IMAGE_BYTES, storing anyway (${Buffer.byteLength(str, 'utf8')} bytes)`
   );
   return str;
 }
@@ -64,6 +76,59 @@ function trimImageForStorage(imageDataUrl) {
   return str;
 }
 
+function formatImageGenError(errorCode, debug = false) {
+  const code = String(errorCode || 'unknown');
+  let msg = 'Не удалось сгенерировать изображение. Попробуй переформулировать запрос.';
+  if (code === 'no_image') {
+    msg = 'Модель не вернула картинку. Попробуй упростить описание или сменить формулировку.';
+  } else if (code === '400' || code === '403' || code === '422') {
+    msg = 'Запрос отклонён политикой или параметрами модели. Попробуй другое описание.';
+  }
+  if (debug && code !== 'null') {
+    msg += ` (код: ${code})`;
+  }
+  return msg;
+}
+
+function isDebugImageGen() {
+  return String(process.env.DEBUG_IMAGE_GEN || '').trim() === '1';
+}
+
+async function runImageWithReference({
+  botId,
+  command,
+  userMessage,
+  history,
+  metaTemplate,
+  referenceUrl,
+  systemInstruction = '',
+}) {
+  const limit = getContextMessageLimit();
+  let genPrompt;
+  let system = systemInstruction;
+
+  if (usesMetaPrompt(command, { url: referenceUrl })) {
+    const historySlice =
+      command === '/correct_image_your'
+        ? [{ role: 'user', content: userMessage }]
+        : sliceHistoryForMeta(history, limit);
+
+    genPrompt = await prepareImageGenPrompt(metaTemplate, {
+      userMessage,
+      historySlice,
+      hasUserImage: Boolean(referenceUrl),
+      mode: command.replace('/', ''),
+    });
+  } else {
+    genPrompt = String(userMessage).trim();
+    if (metaTemplate?.trim()) {
+      system = metaTemplate.trim();
+    }
+  }
+
+  return generateImageOpenRouter(genPrompt, referenceUrl, system);
+}
+
 async function runImagePipeline({
   botId,
   newCommand,
@@ -71,105 +136,78 @@ async function runImagePipeline({
   history = [],
   imagePayload = null,
   lastGeneratedImage = null,
+  lastUserImage = null,
 }) {
   const command = String(newCommand || '').trim();
-  const metaTemplate = await getCommandResponse(botId, command);
-  const limit = getContextMessageLimit();
+  const metaTemplate =
+    (await getCommandResponse(botId, command)) || DEFAULT_META_TEMPLATES[command] || '';
 
-  if (command === '/correct_image_my') {
-    if (!imagePayload) {
-      return {
-        ok: false,
-        replyText: 'Пришли фото вместе с описанием, что нужно изменить.',
-        imageDataUrl: null,
-      };
-    }
+  const ref = resolveReferenceImage({
+    command,
+    imagePayload,
+    lastUserImage,
+    lastGeneratedImage,
+    userMessage,
+  });
 
-    const historySlice = sliceHistoryForMeta(history, limit);
-    const genPrompt = await prepareImageGenPrompt(metaTemplate, {
-      userMessage,
-      historySlice,
-      hasUserImage: true,
-      mode: 'correct_image_my',
-    });
+  console.log(
+    `[imageGen] cmd=${command} ref=${ref.source} refBytes=${imageByteLength(ref.url)} user=${history?.length ?? 0} msgs`
+  );
 
-    const generated = await generateImageOpenRouter(genPrompt, imagePayload);
-    if (!generated.ok || !generated.imageUrl) {
-      return {
-        ok: false,
-        replyText: DEFAULT_REPLY_FAIL,
-        imageDataUrl: null,
-      };
-    }
-
+  if (command === '/correct_image_my' && !ref.url) {
+    const ttlMin = getLastUserImageTtlMinutes();
     return {
-      ok: true,
-      replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
-      imageDataUrl: generated.imageUrl,
-      storedImage: resolveStoredImage(generated.imageUrl),
+      ok: false,
+      replyText: `Пришли фото вместе с описанием или используй недавно загруженное (хранится ${ttlMin} мин).`,
+      imageDataUrl: null,
+      errorCode: 'no_user_image',
+      refSource: ref.source,
     };
   }
 
-  if (command === '/correct_image_your') {
-    if (!lastGeneratedImage) {
-      const ttlMin = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10) || 10;
-      return {
-        ok: false,
-        replyText: `Сначала сгенерируй изображение. Править последнюю картинку бота можно в течение ${ttlMin} мин после генерации.`,
-        imageDataUrl: null,
-      };
-    }
-
-    const historySlice = [{ role: 'user', content: userMessage }];
-    const genPrompt = await prepareImageGenPrompt(metaTemplate, {
-      userMessage,
-      historySlice,
-      hasUserImage: false,
-      mode: 'correct_image_your',
-    });
-
-    const generated = await generateImageOpenRouter(genPrompt, lastGeneratedImage);
-    if (!generated.ok || !generated.imageUrl) {
-      return {
-        ok: false,
-        replyText: DEFAULT_REPLY_FAIL,
-        imageDataUrl: null,
-      };
-    }
-
+  if (command === '/correct_image_your' && !ref.url) {
+    const ttlMin = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10) || 10;
     return {
-      ok: true,
-      replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
-      imageDataUrl: generated.imageUrl,
-      storedImage: resolveStoredImage(generated.imageUrl),
+      ok: false,
+      replyText: `Сначала сгенерируй изображение. Править последнюю картинку бота можно в течение ${ttlMin} мин.`,
+      imageDataUrl: null,
+      errorCode: 'no_bot_image',
+      refSource: ref.source,
     };
   }
 
-  if (command === '/create_image') {
-    const genPrompt = String(userMessage).trim();
-    const systemInstruction = metaTemplate?.trim() || '';
+  const generated = await runImageWithReference({
+    botId,
+    command,
+    userMessage,
+    history,
+    metaTemplate,
+    referenceUrl: ref.url,
+    systemInstruction: command === '/create_image' && !ref.url ? metaTemplate : '',
+  });
 
-    const generated = await generateImageOpenRouter(genPrompt, null, systemInstruction);
-    if (!generated.ok || !generated.imageUrl) {
-      return {
-        ok: false,
-        replyText: DEFAULT_REPLY_FAIL,
-        imageDataUrl: null,
-      };
-    }
+  const debug = isDebugImageGen();
 
+  if (!generated.ok || !generated.imageUrl) {
+    console.error(
+      `[imageGen] generate failed cmd=${command} ref=${ref.source} errorCode=${generated.errorCode}`
+    );
     return {
-      ok: true,
-      replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
-      imageDataUrl: generated.imageUrl,
-      storedImage: resolveStoredImage(generated.imageUrl),
+      ok: false,
+      replyText: formatImageGenError(generated.errorCode, debug),
+      imageDataUrl: null,
+      errorCode: generated.errorCode,
+      refSource: ref.source,
     };
   }
 
   return {
-    ok: false,
-    replyText: 'Неизвестная команда генерации изображений.',
-    imageDataUrl: null,
+    ok: true,
+    replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
+    imageDataUrl: generated.imageUrl,
+    storedImage: resolveStoredImage(generated.imageUrl),
+    errorCode: null,
+    refSource: ref.source,
   };
 }
 
@@ -178,4 +216,6 @@ module.exports = {
   isImageCommand,
   sliceHistoryForMeta,
   runImagePipeline,
+  formatImageGenError,
+  isDebugImageGen,
 };

@@ -1,6 +1,7 @@
 const { pool } = require('./db');
 const fs = require('fs');
 const path = require('path');
+const { IMAGE_COMMANDS } = require('./imageAssets');
 
 // --- Migration Helper (Legacy - migrates to a specific bot or default) ---
 async function migrateFromJSON(botId) {
@@ -124,17 +125,22 @@ async function getClassifierContext(botId, command) {
 
 async function getCommandResponse(botId, command) {
   try {
-    let [cmdRes] = await pool.query(
+    const cmd = String(command || '').trim();
+    const [cmdRes] = await pool.query(
       'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
-      [command, botId]
+      [cmd, botId]
     );
-    if (cmdRes.length === 0) {
-      [cmdRes] = await pool.query(
-        'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
-        ['/start', botId]
-      );
+    if (cmdRes.length > 0 && cmdRes[0].response) {
+      return cmdRes[0].response;
     }
-    return cmdRes[0]?.response || '';
+    if (IMAGE_COMMANDS.includes(cmd)) {
+      return '';
+    }
+    const [fallback] = await pool.query(
+      'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
+      ['/start', botId]
+    );
+    return fallback[0]?.response || '';
   } catch (err) {
     console.error(`Error getting command response for bot ${botId}:`, err);
     return '';
@@ -191,11 +197,16 @@ async function getResponseContext(botId, command, userId = null) {
 
 async function getImageVisionContext(botId, command) {
   try {
-    const candidates = [
-      `${command}:image_vision`,
-      'image_vision',
-      '/start:image_vision',
-    ];
+    const cmd = String(command || '').trim();
+    const candidates = [`${cmd}:image_vision`];
+
+    const visionCommands = (process.env.VISION_COMMANDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (visionCommands.includes(cmd)) {
+      candidates.push('image_vision');
+    }
 
     for (const key of candidates) {
       const [rows] = await pool.query(
