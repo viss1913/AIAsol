@@ -3,6 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { IMAGE_COMMANDS } = require('./imageAssets');
 
+function isDebugContextEnabled() {
+  return String(process.env.DEBUG_CONTEXT || process.env.DEBUG_AI || '').trim() === '1';
+}
+
 // --- Migration Helper (Legacy - migrates to a specific bot or default) ---
 async function migrateFromJSON(botId) {
   try {
@@ -177,10 +181,12 @@ async function getResponseContext(botId, command, userId = null) {
       userContext = userRows[0]?.user_context || '';
     }
 
-    console.log(`[DEBUG] getResponseContext botId=${botId} command=${command} userId=${userId}`);
-    console.log(`[DEBUG] Base Context Found: ${!!baseContext}, Length: ${baseContext.length}`);
-    console.log(`[DEBUG] Command Response Found: ${!!commandResponse}, Length: ${commandResponse.length}`);
-    console.log(`[DEBUG] User Context Found: ${!!userContext}, Length: ${userContext.length}`);
+    if (isDebugContextEnabled()) {
+      console.log(`[DEBUG] getResponseContext botId=${botId} command=${command} userId=${userId}`);
+      console.log(`[DEBUG] Base Context Found: ${!!baseContext}, Length: ${baseContext.length}`);
+      console.log(`[DEBUG] Command Response Found: ${!!commandResponse}, Length: ${commandResponse.length}`);
+      console.log(`[DEBUG] User Context Found: ${!!userContext}, Length: ${userContext.length}`);
+    }
 
     // Assemble final context: baseContext + commandResponse + userContext
     let finalContext = `${baseContext}\n---\n${commandResponse}`;

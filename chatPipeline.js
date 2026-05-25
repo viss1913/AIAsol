@@ -154,6 +154,12 @@ function shouldRerouteToCorrectYour(command, userMessage, lastGeneratedImage) {
   return wantsEditOfBotImage(userMessage);
 }
 
+function shouldPreferUploadedUserImage(command, imagePayload) {
+  if (!imagePayload) return false;
+  const cmd = String(command || '').trim();
+  return cmd === '/correct_image_your';
+}
+
 /**
  * Unified chat processing for Partner API and Telegram.
  */
@@ -187,6 +193,13 @@ async function processUserMessage({
       `[chatPipeline] reroute /create_image → /correct_image_your (user=${userId}, bot=${botId})`
     );
     newCommand = '/correct_image_your';
+  }
+
+  if (shouldPreferUploadedUserImage(newCommand, imagePayload)) {
+    console.warn(
+      `[chatPipeline] reroute ${newCommand} → /correct_image_my because upload is present (user=${userId}, bot=${botId})`
+    );
+    newCommand = '/correct_image_my';
   }
 
   if (isImageCommand(newCommand)) {

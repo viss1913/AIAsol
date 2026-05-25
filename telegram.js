@@ -9,6 +9,8 @@ const { ensureUser, touchUser, addMessage, deleteUserContext, listUsersForBot } 
 const controlToken = process.env.CONTROL_BOT_TOKEN;
 const controlChatId = process.env.CONTROL_CHAT_ID;
 const controlBot = controlToken ? new TelegramBot(controlToken) : null;
+const TELEGRAM_MAX_TEXT_CHARS = 3000;
+const TELEGRAM_MAX_CAPTION_CHARS = 900;
 
 if (controlBot) {
   console.log(`✅ Control Bot initialized. Target Chat ID: ${controlChatId || 'MISSING'}`);
@@ -78,6 +80,77 @@ function formatTelegramHtml(text) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+}
+
+function splitTelegramText(text, maxChars = TELEGRAM_MAX_TEXT_CHARS) {
+  const source = String(text || '').trim();
+  if (!source) return [];
+
+  const chunks = [];
+  let rest = source;
+
+  while (rest.length > maxChars) {
+    let cut = rest.lastIndexOf('\n', maxChars);
+    if (cut < Math.floor(maxChars * 0.5)) {
+      cut = rest.lastIndexOf(' ', maxChars);
+    }
+    if (cut < Math.floor(maxChars * 0.5)) {
+      cut = maxChars;
+    }
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+
+  if (rest) {
+    chunks.push(rest);
+  }
+
+  return chunks.filter(Boolean);
+}
+
+async function sendTelegramText(bot, chatId, text) {
+  const chunks = splitTelegramText(text);
+  if (chunks.length === 0) {
+    await bot.sendMessage(chatId, ' ');
+    return;
+  }
+
+  for (const chunk of chunks) {
+    await bot.sendMessage(chatId, formatTelegramHtml(chunk), { parse_mode: 'HTML' });
+  }
+}
+
+async function sendTelegramPhotoWithReply(bot, chatId, imageDataUrl, replyText) {
+  const caption = formatTelegramHtml(replyText);
+
+  if (caption.length <= TELEGRAM_MAX_CAPTION_CHARS) {
+    const photoOptions = { caption, parse_mode: 'HTML' };
+    if (String(imageDataUrl).startsWith('data:')) {
+      const buffer = dataUrlToBuffer(imageDataUrl);
+      if (buffer) {
+        await bot.sendPhoto(chatId, buffer, photoOptions);
+        return;
+      }
+    } else {
+      await bot.sendPhoto(chatId, imageDataUrl, photoOptions);
+      return;
+    }
+  }
+
+  if (String(imageDataUrl).startsWith('data:')) {
+    const buffer = dataUrlToBuffer(imageDataUrl);
+    if (buffer) {
+      await bot.sendPhoto(chatId, buffer);
+    } else {
+      await bot.sendMessage(chatId, 'Картинка готова, но подпись была слишком длинной.');
+    }
+  } else {
+    await bot.sendPhoto(chatId, imageDataUrl);
+  }
+
+  if (replyText && String(replyText).trim()) {
+    await sendTelegramText(bot, chatId, replyText);
+  }
 }
 
 // Start a single bot instance
@@ -188,21 +261,9 @@ function startBot(botRow) {
         await touchUser(conversationUserId);
 
         if (result.type === 'image' && result.imageDataUrl) {
-          const caption = formatTelegramHtml(result.reply);
-          const photoOptions = { caption, parse_mode: 'HTML' };
-          if (String(result.imageDataUrl).startsWith('data:')) {
-            const buffer = dataUrlToBuffer(result.imageDataUrl);
-            if (buffer) {
-              await bot.sendPhoto(chatId, buffer, photoOptions);
-            } else {
-              await bot.sendMessage(chatId, result.reply);
-            }
-          } else {
-            await bot.sendPhoto(chatId, result.imageDataUrl, photoOptions);
-          }
+          await sendTelegramPhotoWithReply(bot, chatId, result.imageDataUrl, result.reply);
         } else {
-          const formattedReply = formatTelegramHtml(result.reply);
-          await bot.sendMessage(chatId, formattedReply, { parse_mode: 'HTML' });
+          await sendTelegramText(bot, chatId, result.reply);
         }
       } catch (error) {
         console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Error:`, error);

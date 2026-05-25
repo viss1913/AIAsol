@@ -13,6 +13,25 @@ const OPENROUTER_IMAGE_MODEL = (
   'google/gemini-2.5-flash-image'
 ).trim();
 
+function isDebugAiEnabled() {
+  return String(process.env.DEBUG_AI || '').trim() === '1';
+}
+
+function getChatHistoryLimit() {
+  const parsed = parseInt(process.env.CHAT_HISTORY_LIMIT_MESSAGES || '12', 10);
+  if (Number.isNaN(parsed) || parsed < 1) return 12;
+  return Math.min(parsed, 50);
+}
+
+function sliceHistoryForChat(history) {
+  if (!Array.isArray(history)) return [];
+  const limit = getChatHistoryLimit();
+  return history.slice(-limit).map((item) => ({
+    role: item.role,
+    content: item.content,
+  }));
+}
+
 function parseModalitiesEnv() {
   const raw = (process.env.OPENROUTER_IMAGE_MODALITIES || 'image').trim();
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -285,17 +304,21 @@ async function analyzeImageWithVision(userMessage, imageUrl, imageVisionContext 
 
 async function askAI(userMessage, responseContext, history = []) {
   try {
+    const historySlice = sliceHistoryForChat(history);
     const messages = [
       { role: 'system', content: responseContext },
-      ...history,
+      ...historySlice,
       { role: 'user', content: userMessage },
     ];
 
-    console.log('--- DEBUG: Full Context Sent to AI ---');
-    console.log('System Prompt:', responseContext);
-    console.log('History Length:', history.length);
-    console.log('Last User Message:', userMessage);
-    console.log('---------------------------------------');
+    if (isDebugAiEnabled()) {
+      console.log('--- DEBUG: Full Context Sent to AI ---');
+      console.log('System Prompt:', responseContext);
+      console.log('History Length:', history.length);
+      console.log('History Slice Length:', historySlice.length);
+      console.log('Last User Message:', userMessage);
+      console.log('---------------------------------------');
+    }
 
     const { text } = await createChatCompletion(AI_MODEL, messages);
     return text;
