@@ -2,6 +2,9 @@
   "name": "ai-asol",
   "private": true,
   "description": "BankFuture monorepo: backend (Railway) + front (Vercel)",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "build": "npm --prefix backend ci --omit=dev",
     "start": "npm --prefix backend start",

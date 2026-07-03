@@ -1,4 +1,22 @@
-const sharp = require('sharp');
+let sharpModule = null;
+let sharpLoadFailed = false;
+
+function getSharp() {
+  if (sharpLoadFailed) {
+    return null;
+  }
+  if (sharpModule) {
+    return sharpModule;
+  }
+  try {
+    sharpModule = require('sharp');
+    return sharpModule;
+  } catch (error) {
+    sharpLoadFailed = true;
+    console.warn('[imageCompress] sharp unavailable, skipping compression:', error.message);
+    return null;
+  }
+}
 
 function readIntEnv(name, fallback) {
   const parsed = parseInt(process.env[name] || String(fallback), 10);
@@ -37,7 +55,7 @@ function toWebpDataUrl(buffer) {
   return `data:image/webp;base64,${buffer.toString('base64')}`;
 }
 
-async function encodeWebp(buffer, { quality, maxEdge, targetMaxBytes }) {
+async function encodeWebp(sharp, buffer, { quality, maxEdge, targetMaxBytes }) {
   let currentQuality = quality;
   let smallest = null;
 
@@ -69,6 +87,11 @@ async function compressImageDataUrl(dataUrl, purpose = 'storage') {
     return source;
   }
 
+  const sharp = getSharp();
+  if (!sharp) {
+    return source;
+  }
+
   const parsed = parseDataUrl(source);
   if (!parsed) {
     return source;
@@ -86,7 +109,7 @@ async function compressImageDataUrl(dataUrl, purpose = 'storage') {
       : Math.floor(getMaxStoredImageBytes() / 1.4);
 
   const beforeBytes = parsed.buffer.length;
-  const compressed = await encodeWebp(parsed.buffer, {
+  const compressed = await encodeWebp(sharp, parsed.buffer, {
     quality,
     maxEdge,
     targetMaxBytes: targetBinaryBytes,
