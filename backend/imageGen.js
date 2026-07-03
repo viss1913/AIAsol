@@ -1,5 +1,6 @@
 const { getCommandResponse } = require('./context');
 const { prepareImageGenPrompt, generateImageOpenRouter } = require('./ai');
+const { compressImageDataUrl } = require('./imageCompress');
 const {
   IMAGE_COMMANDS,
   resolveReferenceImage,
@@ -36,7 +37,7 @@ function getMaxStoredImageBytes() {
   return parsed;
 }
 
-function resolveStoredImage(imageDataUrl) {
+async function prepareStoredImage(imageDataUrl) {
   if (!imageDataUrl || !String(imageDataUrl).trim()) {
     return null;
   }
@@ -44,14 +45,21 @@ function resolveStoredImage(imageDataUrl) {
   if (str.startsWith('http://') || str.startsWith('https://')) {
     return str;
   }
-  const trimmed = trimImageForStorage(str);
-  if (trimmed) {
-    return trimmed;
+
+  try {
+    const compressed = await compressImageDataUrl(str, 'storage');
+    const bytes = Buffer.byteLength(compressed, 'utf8');
+    const maxBytes = getMaxStoredImageBytes();
+    if (bytes > maxBytes) {
+      console.warn(
+        `[imageGen] Image still above MAX_STORED_IMAGE_BYTES after compress (${bytes} > ${maxBytes})`
+      );
+    }
+    return compressed;
+  } catch (error) {
+    console.warn('[imageGen] prepareStoredImage compress failed:', error.message);
+    return trimImageForStorage(str) || str;
   }
-  console.warn(
-    `[imageGen] Image too large for MAX_STORED_IMAGE_BYTES, storing anyway (${Buffer.byteLength(str, 'utf8')} bytes)`
-  );
-  return str;
 }
 
 function sliceHistoryForMeta(history, limit) {
@@ -198,7 +206,9 @@ async function runImagePipeline({
     userMessage,
     history,
     metaTemplate,
-    referenceUrl: ref.url,
+    referenceUrl: ref.url
+      ? await compressReferenceForApi(ref.url)
+      : null,
     systemInstruction: command === '/create_image' && !ref.url ? metaTemplate : '',
   });
 
@@ -217,14 +227,32 @@ async function runImagePipeline({
     };
   }
 
+  const storedImage = await prepareStoredImage(generated.imageUrl);
+
   return {
     ok: true,
     replyText: generated.text?.trim() || DEFAULT_REPLY_OK,
-    imageDataUrl: generated.imageUrl,
-    storedImage: resolveStoredImage(generated.imageUrl),
+    imageDataUrl: storedImage || generated.imageUrl,
+    storedImage,
     errorCode: null,
     refSource: ref.source,
   };
+}
+
+async function compressReferenceForApi(referenceUrl) {
+  if (!referenceUrl || !String(referenceUrl).startsWith('data:')) {
+    return referenceUrl;
+  }
+  try {
+    const compressed = await compressImageDataUrl(referenceUrl, 'reference');
+    console.log(
+      `[imageGen] ref compressed refBytes=${imageByteLength(compressed)} (was ${imageByteLength(referenceUrl)})`
+    );
+    return compressed;
+  } catch (error) {
+    console.warn('[imageGen] ref compress failed:', error.message);
+    return referenceUrl;
+  }
 }
 
 module.exports = {

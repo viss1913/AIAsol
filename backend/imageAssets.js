@@ -1,4 +1,5 @@
 const { pool } = require('./db');
+const { compressImageDataUrl } = require('./imageCompress');
 
 const IMAGE_COMMANDS = ['/create_image', '/correct_image_my', '/correct_image_your'];
 
@@ -82,16 +83,26 @@ function imageByteLength(url) {
 
 async function saveUserImage(userId, botId, imagePayload) {
   if (!imagePayload || !String(imagePayload).trim()) return;
+
+  let payload = String(imagePayload).trim();
+  if (payload.startsWith('data:')) {
+    try {
+      payload = await compressImageDataUrl(payload, 'storage');
+    } catch (error) {
+      console.warn('[imageAssets] compress user image failed:', error.message);
+    }
+  }
+
   await pool.query(
     `INSERT INTO sessions (user_id, bot_id, last_user_image, last_user_image_at)
      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
      ON DUPLICATE KEY UPDATE
        last_user_image = VALUES(last_user_image),
        last_user_image_at = VALUES(last_user_image_at)`,
-    [String(userId), botId, String(imagePayload).trim()]
+    [String(userId), botId, payload]
   );
   console.log(
-    `[imageAssets] last_user_image saved (${imageByteLength(imagePayload)} bytes, user=${userId}, bot=${botId})`
+    `[imageAssets] last_user_image saved (${imageByteLength(payload)} bytes, user=${userId}, bot=${botId})`
   );
 }
 

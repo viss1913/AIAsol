@@ -11,6 +11,7 @@ const controlChatId = process.env.CONTROL_CHAT_ID;
 const controlBot = controlToken ? new TelegramBot(controlToken) : null;
 const TELEGRAM_MAX_TEXT_CHARS = 3000;
 const TELEGRAM_MAX_CAPTION_CHARS = 900;
+const TYPING_REFRESH_MS = 4000;
 
 if (controlBot) {
   console.log(`✅ Control Bot initialized. Target Chat ID: ${controlChatId || 'MISSING'}`);
@@ -117,6 +118,51 @@ async function sendTelegramText(bot, chatId, text) {
 
   for (const chunk of chunks) {
     await bot.sendMessage(chatId, formatTelegramHtml(chunk), { parse_mode: 'HTML' });
+  }
+}
+
+function pickTelegramChatAction({ imageFileId, userMessage }) {
+  if (imageFileId) {
+    return 'upload_photo';
+  }
+
+  const lower = String(userMessage || '').toLowerCase();
+  const imageHints = [
+    'нарисуй',
+    'сгенерируй',
+    'картинк',
+    'изображен',
+    'добавь',
+    'замени',
+    'измени',
+    'поправ',
+    'убери',
+    'сделай меня',
+    'фото',
+  ];
+  if (imageHints.some((hint) => lower.includes(hint))) {
+    return 'upload_photo';
+  }
+
+  return 'typing';
+}
+
+async function runWithTelegramChatAction(bot, chatId, action, work) {
+  const sendAction = async () => {
+    try {
+      await bot.sendChatAction(chatId, action);
+    } catch (_) {
+      // ignore chat action errors
+    }
+  };
+
+  await sendAction();
+  const timer = setInterval(sendAction, TYPING_REFRESH_MS);
+
+  try {
+    return await work();
+  } finally {
+    clearInterval(timer);
   }
 }
 
@@ -236,12 +282,15 @@ function startBot(botRow) {
           }
         }
 
-        const result = await processUserMessage({
-          botId,
-          userId: conversationUserId,
-          userMessage,
-          imagePayload,
-        });
+        const chatAction = pickTelegramChatAction({ imageFileId, userMessage });
+        const result = await runWithTelegramChatAction(bot, chatId, chatAction, () =>
+          processUserMessage({
+            botId,
+            userId: conversationUserId,
+            userMessage,
+            imagePayload,
+          })
+        );
 
         console.log(
           `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Command: ${result.newCommand} type: ${result.type}`
