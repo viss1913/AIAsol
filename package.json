@@ -1,33 +1,12 @@
 {
-  "name": "bankfuture",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "ai-asol",
+  "private": true,
+  "description": "BankFuture monorepo: backend (Railway) + front (Vercel)",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "axios": "^1.13.2",
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "express-rate-limit": "^8.2.1",
-    "express-validator": "^7.3.1",
-    "helmet": "^8.1.0",
-    "js-yaml": "^4.1.1",
-    "jsonwebtoken": "^9.0.2",
-    "multer": "^2.1.1",
-    "mysql2": "^3.15.3",
-    "node-telegram-bot-api": "^0.66.0",
-    "pg": "^8.16.3"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3"
+    "start": "npm --prefix backend start",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:front": "npm --prefix front run dev",
+    "install:all": "npm --prefix backend install && npm --prefix front install",
+    "build:front": "npm --prefix front run build"
   }
 }

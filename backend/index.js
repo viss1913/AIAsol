@@ -83,7 +83,7 @@ function extractImagePayload(req) {
 // OpenAPI для партнёрского runtime (`POST /chat`) — тот же файл лежит в YML/
 let partnerRuntimeOpenApi = null;
 try {
-  const specPath = path.join(__dirname, 'YML', 'partner-runtime-chat.openapi.yaml');
+  const specPath = path.join(__dirname, '..', 'YML', 'partner-runtime-chat.openapi.yaml');
   partnerRuntimeOpenApi = yaml.load(fs.readFileSync(specPath, 'utf8'));
 } catch (e) {
   console.warn('Partner OpenAPI spec not loaded:', e.message);

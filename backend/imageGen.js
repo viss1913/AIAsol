@@ -9,6 +9,7 @@ const {
 } = require('./imageAssets');
 
 const DEFAULT_REPLY_OK = 'Готово! Вот изображение.';
+const IMAGE_ONLY_PLACEHOLDER = 'Пользователь отправил изображение.';
 
 const DEFAULT_META_TEMPLATES = {
   '/correct_image_my':
@@ -153,6 +154,21 @@ async function runImagePipeline({
   console.log(
     `[imageGen] cmd=${command} ref=${ref.source} refBytes=${imageByteLength(ref.url)} user=${history?.length ?? 0} msgs`
   );
+
+  if (
+    ref.url &&
+    String(userMessage).trim() === IMAGE_ONLY_PLACEHOLDER &&
+    (command === '/correct_image_my' || (command === '/create_image' && ref.source === 'upload'))
+  ) {
+    return {
+      ok: false,
+      replyText:
+        'К фото добавь подпись — что нарисовать или что изменить (например: «добавь кепку мужчине»).',
+      imageDataUrl: null,
+      errorCode: 'image_needs_caption',
+      refSource: ref.source,
+    };
+  }
 
   if (command === '/correct_image_my' && !ref.url) {
     const ttlMin = getLastUserImageTtlMinutes();
