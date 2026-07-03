@@ -301,6 +301,8 @@ async function analyzeImageWithVision(userMessage, imageUrl, imageVisionContext 
       ? imageVisionContext
       : 'Проанализируй фото еды и верни краткую оценку калорий и БЖУ.';
 
+    console.log(`[vision] model=${OPENROUTER_VISION_MODEL} userMsg=${String(userMessage).slice(0, 80)}`);
+
     const content = [
       {
         type: 'text',

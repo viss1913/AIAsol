@@ -7,11 +7,17 @@ const {
   injectVisionIntoContext,
 } = require('./context');
 const { isImageCommand, runImagePipeline, isDebugImageGen } = require('./imageGen');
+const { compressImageDataUrl } = require('./imageCompress');
 const {
   saveUserImage,
   resolveLastUserImage,
   wantsEditOfBotImage,
+  wantsImageAnalysis,
+  resolveVisionImage,
 } = require('./imageAssets');
+
+const DEFAULT_VISION_ANALYSIS_PROMPT =
+  'Проанализируй изображение и ответь на вопрос пользователя точно: поза, одежда, предметы, обстановка, детали.';
 
 function getLastGeneratedImageTtlMinutes() {
   const parsed = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10);
@@ -154,10 +160,42 @@ function shouldRerouteToCorrectYour(command, userMessage, lastGeneratedImage) {
   return wantsEditOfBotImage(userMessage);
 }
 
-function shouldPreferUploadedUserImage(command, imagePayload) {
+function shouldPreferUploadedUserImage(command, imagePayload, userMessage) {
   if (!imagePayload) return false;
   const cmd = String(command || '').trim();
-  return cmd === '/correct_image_your';
+  if (cmd !== '/correct_image_your') return false;
+  if (wantsImageAnalysis(userMessage) && !wantsEditOfBotImage(userMessage)) {
+    return false;
+  }
+  return true;
+}
+
+function shouldRerouteToVisionAnalysis(userMessage) {
+  return wantsImageAnalysis(userMessage) && !wantsEditOfBotImage(userMessage);
+}
+
+function pickCommandForVisionAnalysis(lastCmd, classifiedCommand) {
+  const last = String(lastCmd || '').trim();
+  const classified = String(classifiedCommand || '').trim();
+  if (last && !isImageCommand(last)) {
+    return last;
+  }
+  if (classified && !isImageCommand(classified)) {
+    return classified;
+  }
+  return '/start';
+}
+
+async function prepareVisionImageUrl(imageUrl) {
+  if (!imageUrl || !String(imageUrl).startsWith('data:')) {
+    return imageUrl;
+  }
+  try {
+    return await compressImageDataUrl(imageUrl, 'reference');
+  } catch (error) {
+    console.warn('[chatPipeline] vision image compress failed:', error.message);
+    return imageUrl;
+  }
 }
 
 /**
@@ -195,7 +233,22 @@ async function processUserMessage({
     newCommand = '/correct_image_your';
   }
 
-  if (shouldPreferUploadedUserImage(newCommand, imagePayload)) {
+  const visionRef = resolveVisionImage({
+    imagePayload,
+    lastUserImage,
+    lastGeneratedImage,
+  });
+  const analysisQuestion = shouldRerouteToVisionAnalysis(userMessage);
+
+  if (analysisQuestion && visionRef.url && isImageCommand(newCommand)) {
+    const visionCommand = pickCommandForVisionAnalysis(lastCmd, newCommand);
+    console.warn(
+      `[chatPipeline] reroute ${newCommand} → vision (${visionCommand}, ref=${visionRef.source}, user=${userId}, bot=${botId})`
+    );
+    newCommand = visionCommand;
+  }
+
+  if (shouldPreferUploadedUserImage(newCommand, imagePayload, userMessage)) {
     console.warn(
       `[chatPipeline] reroute ${newCommand} → /correct_image_my because upload is present (user=${userId}, bot=${botId})`
     );
@@ -264,12 +317,22 @@ async function processUserMessage({
   };
 
   const imageVisionContext = await getImageVisionContext(botId, newCommand);
-  if (imagePayload && imageVisionContext.trim()) {
+  let visionPrompt = imageVisionContext.trim();
+  if (!visionPrompt && analysisQuestion) {
+    visionPrompt = DEFAULT_VISION_ANALYSIS_PROMPT;
+  }
+
+  const visionSource = imagePayload || (analysisQuestion ? visionRef.url : null);
+  if (visionSource && visionPrompt) {
     visionDebug.triggered = true;
-    const vision = await analyzeImageWithVision(userMessage, imagePayload, imageVisionContext);
+    const visionUrl = await prepareVisionImageUrl(visionSource);
+    console.log(
+      `[chatPipeline] vision model=${process.env.OPENROUTER_VISION_MODEL || process.env.AI_VISION_MODEL || 'default'} ref=${visionRef.source}`
+    );
+    const vision = await analyzeImageWithVision(userMessage, visionUrl, visionPrompt);
     visionDebug.ok = vision.ok;
     visionDebug.errorCode = vision.errorCode;
-    responseContext = injectVisionIntoContext(responseContext, vision.text, imageVisionContext);
+    responseContext = injectVisionIntoContext(responseContext, vision.text, visionPrompt);
   }
 
   const reply = await askAI(userMessage, responseContext, history);

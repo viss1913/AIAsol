@@ -38,6 +38,32 @@ const DEFAULT_EDIT_KEYWORDS = [
   'это',
 ];
 
+const DEFAULT_ANALYSIS_KEYWORDS = [
+  'позе',
+  'поза',
+  'позу',
+  'опиши',
+  'описать',
+  'проанализируй',
+  'анализируй',
+  'анализ',
+  'что на фото',
+  'что на картин',
+  'что изображ',
+  'что видишь',
+  'что вижу',
+  'расскажи о',
+  'какой я',
+  'какая я',
+  'кто на фото',
+  'где я',
+  'что за',
+  'какого цвета',
+  'сколько',
+  'describe',
+  'analyze',
+];
+
 function getLastUserImageTtlMinutes() {
   const parsed = parseInt(process.env.LAST_USER_IMAGE_TTL_MINUTES || '30', 10);
   if (Number.isNaN(parsed) || parsed < 1) return 30;
@@ -56,6 +82,12 @@ function getEditKeywords() {
   return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 
+function getAnalysisKeywords() {
+  const raw = (process.env.IMAGE_ANALYSIS_KEYWORDS || '').trim();
+  if (!raw) return DEFAULT_ANALYSIS_KEYWORDS;
+  return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
 function matchesKeywords(text, keywords) {
   const lower = String(text || '').toLowerCase();
   return keywords.some((kw) => lower.includes(kw));
@@ -67,6 +99,27 @@ function wantsPriorUserImage(userMessage) {
 
 function wantsEditOfBotImage(userMessage) {
   return matchesKeywords(userMessage, getEditKeywords());
+}
+
+function wantsImageAnalysis(userMessage) {
+  return matchesKeywords(userMessage, getAnalysisKeywords());
+}
+
+function resolveVisionImage({
+  imagePayload = null,
+  lastUserImage = null,
+  lastGeneratedImage = null,
+}) {
+  if (imagePayload && String(imagePayload).trim()) {
+    return { url: String(imagePayload).trim(), source: 'upload' };
+  }
+  if (lastGeneratedImage) {
+    return { url: lastGeneratedImage, source: 'session_bot' };
+  }
+  if (lastUserImage) {
+    return { url: lastUserImage, source: 'session_user' };
+  }
+  return { url: null, source: 'none' };
 }
 
 function isTimestampExpired(imageAt, ttlMinutes) {
@@ -179,6 +232,8 @@ module.exports = {
   IMAGE_COMMANDS,
   wantsPriorUserImage,
   wantsEditOfBotImage,
+  wantsImageAnalysis,
+  resolveVisionImage,
   saveUserImage,
   resolveLastUserImage,
   resolveReferenceImage,
