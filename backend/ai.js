@@ -12,22 +12,48 @@ const OPENROUTER_IMAGE_MODEL = (
   process.env.OPENROUTER_IMAGE_MODEL ||
   'google/gemini-2.5-flash-image'
 ).trim();
+const OPENROUTER_IMAGE_MODEL_FALLBACK = (
+  process.env.OPENROUTER_IMAGE_MODEL_FALLBACK ||
+  'google/gemini-2.5-flash-image'
+).trim();
 
 function isDebugAiEnabled() {
   return String(process.env.DEBUG_AI || '').trim() === '1';
 }
 
-function parseModalitiesEnv() {
+function parseModalitiesEnv(model = OPENROUTER_IMAGE_MODEL) {
   const configured = (process.env.OPENROUTER_IMAGE_MODALITIES || '').trim();
   if (configured) {
     return configured.split(',').map((s) => s.trim()).filter(Boolean);
   }
-  // Gemini image models output both text and image; image-only often returns empty choices.
-  const model = OPENROUTER_IMAGE_MODEL.toLowerCase();
-  if (model.includes('gemini') && model.includes('image')) {
+  const normalized = String(model || '').toLowerCase();
+  if (normalized.includes('gemini') && normalized.includes('image')) {
     return ['image', 'text'];
   }
-  return ['image'];
+  return ['image', 'text'];
+}
+
+function getImageModelCandidates() {
+  const models = [OPENROUTER_IMAGE_MODEL];
+  const fallback = OPENROUTER_IMAGE_MODEL_FALLBACK;
+  if (fallback && !models.includes(fallback)) {
+    models.push(fallback);
+  }
+  return models;
+}
+
+function resolveImageGenErrorCode(result, httpError = null) {
+  if (httpError?.response?.status) {
+    return String(httpError.response.status);
+  }
+  const apiCode = result?.rawResponse?.error?.code;
+  if (apiCode != null) {
+    return String(apiCode);
+  }
+  if (!result?.imageUrl) {
+    return 'no_image';
+  }
+  return null;
 }
 
 function getImageConfig() {
@@ -215,7 +241,6 @@ ${JSON.stringify(historySlice, null, 2)}
 }
 
 async function generateImageOpenRouter(prompt, referenceImageUrl = null, systemInstruction = '') {
-  const modalities = parseModalitiesEnv();
   const imageConfig = getImageConfig();
   const promptText = String(prompt).trim();
   const hasReference = Boolean(referenceImageUrl);
@@ -251,48 +276,80 @@ async function generateImageOpenRouter(prompt, referenceImageUrl = null, systemI
     },
   ];
 
-  try {
-    console.log(
-      `[imageGen] openrouter model=${OPENROUTER_IMAGE_MODEL} modalities=${modalities.join(',')} ref=${hasReference}`
-    );
+  const models = getImageModelCandidates();
+  let lastFailure = {
+    ok: false,
+    imageUrl: null,
+    text: '',
+    errorCode: 'no_image',
+  };
 
-    const result = await createChatCompletion(OPENROUTER_IMAGE_MODEL, messages, {
-      modalities,
-      image_config: imageConfig,
-      timeoutMs: 180000,
-    });
+  for (let index = 0; index < models.length; index += 1) {
+    const model = models[index];
+    const modalities = parseModalitiesEnv(model);
 
-    if (!result.imageUrl) {
+    try {
+      console.log(
+        `[imageGen] openrouter model=${model} modalities=${modalities.join(',')} ref=${hasReference}`
+      );
+
+      const result = await createChatCompletion(model, messages, {
+        modalities,
+        image_config: imageConfig,
+        timeoutMs: 180000,
+      });
+
+      if (result.imageUrl) {
+        return {
+          ok: true,
+          imageUrl: result.imageUrl,
+          text: result.text || '',
+          errorCode: null,
+          modelUsed: model,
+        };
+      }
+
+      const errorCode = resolveImageGenErrorCode(result);
       console.error(
         'generateImageOpenRouter: no image in response',
+        `model=${model}`,
         summarizeOpenRouterResponse(result.rawResponse),
         result.text ? `assistantText=${result.text.slice(0, 240)}` : ''
       );
-      return {
+
+      lastFailure = {
         ok: false,
         imageUrl: null,
         text: result.text || '',
-        errorCode: 'no_image',
+        errorCode,
       };
-    }
 
-    return {
-      ok: true,
-      imageUrl: result.imageUrl,
-      text: result.text || '',
-      errorCode: null,
-    };
-  } catch (error) {
-    const errorCode = error.response?.status || error.code || 'unknown';
-    const errorBody = error.response?.data ? JSON.stringify(error.response.data) : error.message;
-    console.error(`generateImageOpenRouter error [${errorCode}]:`, errorBody);
-    return {
-      ok: false,
-      imageUrl: null,
-      text: '',
-      errorCode: String(errorCode),
-    };
+      if (index < models.length - 1) {
+        console.warn(
+          `[imageGen] retry with fallback model=${models[index + 1]} after ${errorCode}`
+        );
+      }
+    } catch (error) {
+      const errorCode = resolveImageGenErrorCode(null, error);
+      const errorBody = error.response?.data ? JSON.stringify(error.response.data) : error.message;
+      console.error(`generateImageOpenRouter error [${errorCode}] model=${model}:`, errorBody);
+
+      lastFailure = {
+        ok: false,
+        imageUrl: null,
+        text: '',
+        errorCode,
+      };
+
+      if (index < models.length - 1) {
+        console.warn(
+          `[imageGen] retry with fallback model=${models[index + 1]} after ${errorCode}`
+        );
+      }
+    }
   }
+
+  return lastFailure;
 }
 
 async function analyzeImageWithVision(userMessage, imageUrl, imageVisionContext = '') {

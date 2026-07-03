@@ -321,6 +321,18 @@ async function processUserMessage({
     newCommand = correctYourFallback;
   }
 
+  if (
+    (imagePayload || lastUserImage) &&
+    wantsEditOfBotImage(userMessage) &&
+    !isImageCommand(newCommand) &&
+    !isOcrCommand(newCommand)
+  ) {
+    console.warn(
+      `[chatPipeline] reroute ${newCommand} → /correct_image_my (user photo edit, user=${userId}, bot=${botId})`
+    );
+    newCommand = '/correct_image_my';
+  }
+
   if (isOcrCommand(newCommand)) {
     return runOcrPipeline({
       botId,
