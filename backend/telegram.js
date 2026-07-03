@@ -144,6 +144,11 @@ function pickTelegramChatAction({ imageFileId, userMessage }) {
     return 'upload_photo';
   }
 
+  const visionHints = ['позе', 'поза', 'опиши', 'проанализируй', 'что на фото', 'ocr', '/ocr'];
+  if (visionHints.some((hint) => lower.includes(hint))) {
+    return 'typing';
+  }
+
   return 'typing';
 }
 

@@ -203,12 +203,12 @@ async function getResponseContext(botId, command, userId = null) {
 
 async function getImageVisionContext(botId, command) {
   try {
-    const cmd = String(command || '').trim();
+    const cmd = normalizeCommandForContext(command);
     const candidates = [`${cmd}:image_vision`];
 
-    const visionCommands = (process.env.VISION_COMMANDS || '')
+    const visionCommands = (process.env.VISION_COMMANDS || '/ocr')
       .split(',')
-      .map((s) => s.trim())
+      .map((s) => normalizeCommandForContext(s))
       .filter(Boolean);
     if (visionCommands.includes(cmd)) {
       candidates.push('image_vision');
@@ -229,6 +229,38 @@ async function getImageVisionContext(botId, command) {
     console.error(`Error getting image vision context for bot ${botId}:`, err);
     return '';
   }
+}
+
+function normalizeCommandForContext(command) {
+  const cmd = String(command || '').trim();
+  if (cmd.toLowerCase() === '/ocr') {
+    return '/ocr';
+  }
+  return cmd;
+}
+
+const DEFAULT_OCR_VISION_PROMPT =
+  'Распознай текст и содержимое изображения. Ответь на вопрос пользователя точно, структурированно и по делу.';
+
+async function getOcrVisionPrompt(botId) {
+  const visionContext = await getImageVisionContext(botId, '/ocr');
+  if (visionContext.trim()) {
+    return visionContext.trim();
+  }
+
+  try {
+    const [rows] = await pool.query(
+      'SELECT response FROM ai_commands WHERE command = ? AND bot_id = ?',
+      ['/ocr', botId]
+    );
+    if (rows.length > 0 && rows[0].response) {
+      return String(rows[0].response).trim();
+    }
+  } catch (err) {
+    console.error(`Error getting /ocr response for bot ${botId}:`, err);
+  }
+
+  return DEFAULT_OCR_VISION_PROMPT;
 }
 
 function injectVisionIntoContext(baseContext, visionResult, imageVisionContext = '') {
@@ -255,5 +287,6 @@ module.exports = {
   getCommandResponse,
   getResponseContext,
   getImageVisionContext,
+  getOcrVisionPrompt,
   injectVisionIntoContext,
 };

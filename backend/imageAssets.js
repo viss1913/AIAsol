@@ -2,6 +2,7 @@ const { pool } = require('./db');
 const { compressImageDataUrl } = require('./imageCompress');
 
 const IMAGE_COMMANDS = ['/create_image', '/correct_image_my', '/correct_image_your'];
+const OCR_COMMAND = '/ocr';
 
 const DEFAULT_REFERENCE_KEYWORDS = [
   'этот',
@@ -228,12 +229,27 @@ function isImageCommandName(command) {
   return IMAGE_COMMANDS.includes(String(command || '').trim());
 }
 
+function normalizeCommand(command) {
+  const cmd = String(command || '').trim();
+  if (cmd.toLowerCase() === '/ocr') {
+    return OCR_COMMAND;
+  }
+  return cmd;
+}
+
+function isOcrCommand(command) {
+  return normalizeCommand(command) === OCR_COMMAND;
+}
+
 module.exports = {
   IMAGE_COMMANDS,
+  OCR_COMMAND,
   wantsPriorUserImage,
   wantsEditOfBotImage,
   wantsImageAnalysis,
   resolveVisionImage,
+  normalizeCommand,
+  isOcrCommand,
   saveUserImage,
   resolveLastUserImage,
   resolveReferenceImage,

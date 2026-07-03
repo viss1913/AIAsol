@@ -1,8 +1,21 @@
-# Генерация и правка изображений
+# Генерация, правка и анализ изображений
 
-Три команды в админке (`ai_commands`): `/create_image`, `/correct_image_my`, `/correct_image_your`.
+Команды в админке (`ai_commands`):
 
-## classifier vs response
+- **Генерация/правка:** `/create_image`, `/correct_image_my`, `/correct_image_your`
+- **Анализ (vision/OCR):** `/ocr` — вопросы о фото без правки («в какой позе», «что на фото», «распознай текст»)
+
+## `/ocr` (vision)
+
+| Поле | Назначение |
+|------|------------|
+| **classifier** | Когда роутить на `/ocr` (дублируй на `/start` и соседних командах) |
+| **`/ocr:image_vision` response** | Инструкция для vision-модели (`OPENROUTER_VISION_MODEL`) — приоритет |
+| **`/ocr` response** | Fallback для vision; также стиль ответа фазы B после анализа |
+
+Референс: upload → `last_generated_image` → `last_user_image`. Эвристика `IMAGE_ANALYSIS_KEYWORDS` тоже перекидывает на `/ocr`.
+
+---
 
 | Поле | Назначение |
 |------|------------|
