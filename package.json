@@ -3,6 +3,7 @@
   "private": true,
   "description": "BankFuture monorepo: backend (Railway) + front (Vercel)",
   "scripts": {
+    "build": "npm --prefix backend ci --omit=dev",
     "start": "npm --prefix backend start",
     "dev:backend": "npm --prefix backend run dev",
     "dev:front": "npm --prefix front run dev",

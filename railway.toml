@@ -1,0 +1,6 @@
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm --prefix backend ci --omit=dev"
+
+[deploy]
+startCommand = "npm --prefix backend start"
