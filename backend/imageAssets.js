@@ -65,6 +65,18 @@ const DEFAULT_ANALYSIS_KEYWORDS = [
   'analyze',
 ];
 
+const DEFAULT_GENERATE_KEYWORDS = [
+  'сгенер',
+  'генерир',
+  'нарисуй',
+  'нарисовать',
+  'отрисуй',
+  'создай',
+  'create',
+  'draw',
+  'generate',
+];
+
 function getLastUserImageTtlMinutes() {
   const parsed = parseInt(process.env.LAST_USER_IMAGE_TTL_MINUTES || '30', 10);
   if (Number.isNaN(parsed) || parsed < 1) return 30;
@@ -86,6 +98,12 @@ function getEditKeywords() {
 function getAnalysisKeywords() {
   const raw = (process.env.IMAGE_ANALYSIS_KEYWORDS || '').trim();
   if (!raw) return DEFAULT_ANALYSIS_KEYWORDS;
+  return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+function getGenerateKeywords() {
+  const raw = (process.env.IMAGE_GENERATE_KEYWORDS || '').trim();
+  if (!raw) return DEFAULT_GENERATE_KEYWORDS;
   return raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 }
 

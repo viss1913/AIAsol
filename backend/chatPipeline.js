@@ -14,6 +14,7 @@ const {
   resolveLastUserImage,
   wantsEditOfBotImage,
   wantsImageAnalysis,
+  rerouteCorrectYourWithoutBotImage,
   resolveVisionImage,
   normalizeCommand,
   isOcrCommand,
