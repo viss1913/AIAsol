@@ -193,7 +193,7 @@ async function runImagePipeline({
     const ttlMin = parseInt(process.env.LAST_GENERATED_IMAGE_TTL_MINUTES || '10', 10) || 10;
     return {
       ok: false,
-      replyText: `Сначала сгенерируй изображение. Править последнюю картинку бота можно в течение ${ttlMin} мин.`,
+      replyText: `Нет свежей картинки бота для правки (хранится ${ttlMin} мин). Сгенерируй новую или пришли фото с описанием.`,
       imageDataUrl: null,
       errorCode: 'no_bot_image',
       refSource: ref.source,

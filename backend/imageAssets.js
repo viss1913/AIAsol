@@ -124,6 +124,28 @@ function wantsImageAnalysis(userMessage) {
   return matchesKeywords(userMessage, getAnalysisKeywords());
 }
 
+function wantsNewImageGeneration(userMessage) {
+  return matchesKeywords(userMessage, getGenerateKeywords());
+}
+
+function rerouteCorrectYourWithoutBotImage({
+  command,
+  userMessage,
+  lastGeneratedImage,
+  lastUserImage,
+}) {
+  if (String(command || '').trim() !== '/correct_image_your' || lastGeneratedImage) {
+    return null;
+  }
+  if (wantsNewImageGeneration(userMessage)) {
+    return '/create_image';
+  }
+  if (lastUserImage && wantsEditOfBotImage(userMessage)) {
+    return '/correct_image_my';
+  }
+  return null;
+}
+
 function resolveVisionImage({
   imagePayload = null,
   lastUserImage = null,
@@ -265,6 +287,8 @@ module.exports = {
   wantsPriorUserImage,
   wantsEditOfBotImage,
   wantsImageAnalysis,
+  wantsNewImageGeneration,
+  rerouteCorrectYourWithoutBotImage,
   resolveVisionImage,
   normalizeCommand,
   isOcrCommand,

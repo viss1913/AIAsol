@@ -308,6 +308,19 @@ async function processUserMessage({
     newCommand = '/correct_image_my';
   }
 
+  const correctYourFallback = rerouteCorrectYourWithoutBotImage({
+    command: newCommand,
+    userMessage,
+    lastGeneratedImage,
+    lastUserImage,
+  });
+  if (correctYourFallback) {
+    console.warn(
+      `[chatPipeline] reroute /correct_image_your → ${correctYourFallback} (no session_bot image, user=${userId}, bot=${botId})`
+    );
+    newCommand = correctYourFallback;
+  }
+
   if (isOcrCommand(newCommand)) {
     return runOcrPipeline({
       botId,
