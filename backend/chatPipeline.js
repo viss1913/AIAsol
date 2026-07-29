@@ -371,6 +371,7 @@ async function processUserMessage({
   if (
     (imagePayload || lastUserImage) &&
     !isImageOnlyPlaceholder(userMessage) &&
+    !wantsImageAnalysis(userMessage) &&
     wantsEditOfBotImage(userMessage) &&
     !isImageCommand(newCommand) &&
     !isOcrCommand(newCommand)

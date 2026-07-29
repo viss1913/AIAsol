@@ -36,11 +36,6 @@ const DEFAULT_EDIT_KEYWORDS = [
   'переодень',
   'одеть',
   'телепуз',
-  'тот же',
-  'ту же',
-  'эту',
-  'этот',
-  'это',
 ];
 
 const DEFAULT_ANALYSIS_KEYWORDS = [
