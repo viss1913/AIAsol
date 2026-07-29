@@ -176,6 +176,39 @@ function shouldRerouteToVisionAnalysis(userMessage) {
   return wantsImageAnalysis(userMessage) && !wantsEditOfBotImage(userMessage);
 }
 
+const IMAGE_ONLY_PLACEHOLDER = 'Пользователь отправил изображение.';
+
+function isImageOnlyPlaceholder(userMessage) {
+  return String(userMessage || '').trim() === IMAGE_ONLY_PLACEHOLDER;
+}
+
+function isValidSlashCommand(command) {
+  return /^\/[A-Za-z0-9_]+$/.test(String(command || '').trim());
+}
+
+/**
+ * Photo-only / broken classify must not drop a vision-capable last command
+ * (e.g. /ccal → placeholder → prose instead of staying on /ccal).
+ */
+async function resolveStickyVisionCommand(botId, lastCmd, newCommand, userMessage, imagePayload) {
+  if (!imagePayload) return null;
+
+  const last = normalizeCommand(lastCmd);
+  const next = normalizeCommand(newCommand);
+  if (!last || last === '/start' || last === next) return null;
+
+  const imageOnly = isImageOnlyPlaceholder(userMessage);
+  const invalidNext = !isValidSlashCommand(next);
+  if (!imageOnly && !invalidNext) return null;
+
+  if (isOcrCommand(last)) return last;
+
+  const lastVision = await getImageVisionContext(botId, last);
+  if (lastVision.trim()) return last;
+
+  return null;
+}
+
 async function prepareVisionImageUrl(imageUrl) {
   if (!imageUrl || !String(imageUrl).startsWith('data:')) {
     return imageUrl;
@@ -280,6 +313,20 @@ async function processUserMessage({
     newCommand = normalizeCommand(await classifyIntent(userMessage, classifierContext));
   }
 
+  const stickyCommand = await resolveStickyVisionCommand(
+    botId,
+    lastCmd,
+    newCommand,
+    userMessage,
+    imagePayload
+  );
+  if (stickyCommand) {
+    console.warn(
+      `[chatPipeline] sticky ${newCommand} → ${stickyCommand} (photo vision, user=${userId}, bot=${botId})`
+    );
+    newCommand = stickyCommand;
+  }
+
   if (shouldRerouteToCorrectYour(newCommand, userMessage, lastGeneratedImage)) {
     console.warn(
       `[chatPipeline] reroute /create_image → /correct_image_your (user=${userId}, bot=${botId})`
@@ -323,6 +370,7 @@ async function processUserMessage({
 
   if (
     (imagePayload || lastUserImage) &&
+    !isImageOnlyPlaceholder(userMessage) &&
     wantsEditOfBotImage(userMessage) &&
     !isImageCommand(newCommand) &&
     !isOcrCommand(newCommand)

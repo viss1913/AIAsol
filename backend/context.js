@@ -206,7 +206,7 @@ async function getImageVisionContext(botId, command) {
     const cmd = normalizeCommandForContext(command);
     const candidates = [`${cmd}:image_vision`];
 
-    const visionCommands = (process.env.VISION_COMMANDS || '/ocr')
+    const visionCommands = (process.env.VISION_COMMANDS || '/ocr,/ccal')
       .split(',')
       .map((s) => normalizeCommandForContext(s))
       .filter(Boolean);
