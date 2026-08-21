@@ -54,6 +54,8 @@
 
 Приоритет референса: upload → session_user → session_bot (по команде).
 
+Альбом Telegram (`media_group_id`): фото собираются ~900 мс (`TELEGRAM_MEDIA_GROUP_WAIT_MS`) и уходят **одним** запросом с несколькими `image_url` (порядок как в альбоме: 1 — человек, 2 — платье и т.д.). В `last_user_image` сохраняется первое фото.
+
 Сценарий «фото графика → текст вставь на экран»: фото сохраняется в `last_user_image`, второе сообщение с «этот график» → `/create_image` или `/correct_image_my` с референсом.
 
 ---
@@ -78,6 +80,8 @@ IMAGE_PROMPT_CONTEXT_MESSAGES=10
 MAX_STORED_IMAGE_BYTES=14680064
 LAST_GENERATED_IMAGE_TTL_MINUTES=10
 LAST_USER_IMAGE_TTL_MINUTES=30
+TELEGRAM_MEDIA_GROUP_WAIT_MS=900
+TELEGRAM_MEDIA_GROUP_MAX=10
 IMAGE_EDIT_REROUTE=1
 IMAGE_REFERENCE_KEYWORDS=этот,график,вставь,на экран
 IMAGE_EDIT_KEYWORDS=измени,замени,телепуз,сделай,днём
@@ -106,4 +110,4 @@ DEBUG_IMAGE_GEN=1
 
 ## Telegram
 
-`sendPhoto` + caption. `/reset` чистит сессию и фото.
+`sendPhoto` + caption. `/reset` чистит сессию и фото. Альбом из нескольких фото — один пайплайн, все картинки в OpenRouter.

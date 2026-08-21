@@ -16,6 +16,7 @@ const {
   wantsImageAnalysis,
   rerouteCorrectYourWithoutBotImage,
   resolveVisionImage,
+  hasImagePayload,
   normalizeCommand,
   isOcrCommand,
   OCR_COMMAND,
@@ -163,7 +164,7 @@ function shouldRerouteToCorrectYour(command, userMessage, lastGeneratedImage) {
 }
 
 function shouldPreferUploadedUserImage(command, imagePayload, userMessage) {
-  if (!imagePayload) return false;
+  if (!hasImagePayload(imagePayload)) return false;
   const cmd = String(command || '').trim();
   if (cmd !== '/correct_image_your') return false;
   if (wantsImageAnalysis(userMessage) && !wantsEditOfBotImage(userMessage)) {
@@ -191,7 +192,7 @@ function isValidSlashCommand(command) {
  * (e.g. /ccal → placeholder → prose instead of staying on /ccal).
  */
 async function resolveStickyVisionCommand(botId, lastCmd, newCommand, userMessage, imagePayload) {
-  if (!imagePayload) return null;
+  if (!hasImagePayload(imagePayload)) return null;
 
   const last = normalizeCommand(lastCmd);
   const next = normalizeCommand(newCommand);
@@ -219,6 +220,15 @@ async function prepareVisionImageUrl(imageUrl) {
     console.warn('[chatPipeline] vision image compress failed:', error.message);
     return imageUrl;
   }
+}
+
+async function prepareVisionImageUrls(urls) {
+  const list = Array.isArray(urls) ? urls.filter(Boolean) : (urls ? [urls] : []);
+  const prepared = [];
+  for (const url of list) {
+    prepared.push(await prepareVisionImageUrl(url));
+  }
+  return prepared;
 }
 
 async function runOcrPipeline({
@@ -250,7 +260,7 @@ async function runOcrPipeline({
   }
 
   const visionPrompt = await getOcrVisionPrompt(botId);
-  const visionUrl = await prepareVisionImageUrl(visionRef.url);
+  const visionUrls = await prepareVisionImageUrls(visionRef.urls.length ? visionRef.urls : [visionRef.url]);
   const visionDebug = {
     triggered: true,
     ok: null,
@@ -258,10 +268,10 @@ async function runOcrPipeline({
   };
 
   console.log(
-    `[chatPipeline] /ocr vision model=${process.env.OPENROUTER_VISION_MODEL || process.env.AI_VISION_MODEL || 'default'} ref=${visionRef.source} (user=${userId}, bot=${botId})`
+    `[chatPipeline] /ocr vision model=${process.env.OPENROUTER_VISION_MODEL || process.env.AI_VISION_MODEL || 'default'} ref=${visionRef.source} refs=${visionUrls.length} (user=${userId}, bot=${botId})`
   );
 
-  const vision = await analyzeImageWithVision(userMessage, visionUrl, visionPrompt);
+  const vision = await analyzeImageWithVision(userMessage, visionUrls, visionPrompt);
   visionDebug.ok = vision.ok;
   visionDebug.errorCode = vision.errorCode;
 
@@ -294,7 +304,7 @@ async function processUserMessage({
   userMessage,
   imagePayload = null,
 }) {
-  if (imagePayload) {
+  if (hasImagePayload(imagePayload)) {
     await saveUserImage(userId, botId, imagePayload);
   }
 
@@ -369,7 +379,7 @@ async function processUserMessage({
   }
 
   if (
-    (imagePayload || lastUserImage) &&
+    (hasImagePayload(imagePayload) || lastUserImage) &&
     !isImageOnlyPlaceholder(userMessage) &&
     !wantsImageAnalysis(userMessage) &&
     wantsEditOfBotImage(userMessage) &&
@@ -456,14 +466,15 @@ async function processUserMessage({
   };
 
   const imageVisionContext = await getImageVisionContext(botId, newCommand);
-  const visionSource = imagePayload;
+  const visionUploads = visionRef.urls && visionRef.source === 'upload' ? visionRef.urls : [];
+  const visionSource = visionUploads.length ? visionUploads : (hasImagePayload(imagePayload) ? imagePayload : null);
   if (visionSource && imageVisionContext.trim()) {
     visionDebug.triggered = true;
-    const visionUrl = await prepareVisionImageUrl(visionSource);
+    const visionUrls = await prepareVisionImageUrls(visionSource);
     console.log(
-      `[chatPipeline] vision model=${process.env.OPENROUTER_VISION_MODEL || process.env.AI_VISION_MODEL || 'default'} cmd=${newCommand}`
+      `[chatPipeline] vision model=${process.env.OPENROUTER_VISION_MODEL || process.env.AI_VISION_MODEL || 'default'} cmd=${newCommand} refs=${visionUrls.length}`
     );
-    const vision = await analyzeImageWithVision(userMessage, visionUrl, imageVisionContext);
+    const vision = await analyzeImageWithVision(userMessage, visionUrls, imageVisionContext);
     visionDebug.ok = vision.ok;
     visionDebug.errorCode = vision.errorCode;
     responseContext = injectVisionIntoContext(responseContext, vision.text, imageVisionContext);

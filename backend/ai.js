@@ -198,13 +198,25 @@ ${classifierContext}
   }
 }
 
+function normalizeReferenceUrls(referenceImageUrl) {
+  if (!referenceImageUrl) return [];
+  const list = Array.isArray(referenceImageUrl) ? referenceImageUrl : [referenceImageUrl];
+  return list.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
 async function prepareImageGenPrompt(metaTemplate, payload) {
   const {
     userMessage,
     historySlice = [],
     hasUserImage = false,
+    imageCount = 0,
     mode = 'edit',
   } = payload;
+
+  const attachedCount = Number(imageCount) > 0 ? Number(imageCount) : (hasUserImage ? 1 : 0);
+  const multiHint = attachedCount > 1
+    ? 'Пользователь приложил НЕСКОЛЬКО фото по порядку: первое обычно человек/сцена, следующие — референсы (одежда, предмет). Промпт должен явно сказать модели использовать ВСЕ вложения.'
+    : '';
 
   const dataBlock = `
 ---
@@ -217,6 +229,8 @@ ${JSON.stringify(historySlice, null, 2)}
 
 Сообщение пользователя: ${JSON.stringify(userMessage)}
 Пользователь приложил своё изображение: ${hasUserImage ? 'да' : 'нет'}
+Число приложенных изображений: ${attachedCount}
+${multiHint}
 
 Верни ТОЛЬКО готовый промпт для модели генерации изображений, без пояснений и markdown.
 `;
@@ -243,13 +257,18 @@ ${JSON.stringify(historySlice, null, 2)}
 async function generateImageOpenRouter(prompt, referenceImageUrl = null, systemInstruction = '') {
   const imageConfig = getImageConfig();
   const promptText = String(prompt).trim();
-  const hasReference = Boolean(referenceImageUrl);
+  const refs = normalizeReferenceUrls(referenceImageUrl);
+  const hasReference = refs.length > 0;
 
   const textParts = [];
   if (systemInstruction && systemInstruction.trim()) {
     textParts.push(systemInstruction.trim());
   }
-  if (hasReference) {
+  if (refs.length > 1) {
+    textParts.push(
+      `There are ${refs.length} attached images in order (image 1 is first). Follow these instructions: ${promptText}. Use ALL attached images as visual references (for example: the person on one photo and clothing or an object on another). Preserve the person's identity and likeness unless the user asks otherwise. Return the edited image.`
+    );
+  } else if (hasReference) {
     textParts.push(
       `Edit the attached image according to these instructions: ${promptText}. Preserve composition and subject identity unless the user asks otherwise. Return the edited image.`
     );
@@ -258,10 +277,10 @@ async function generateImageOpenRouter(prompt, referenceImageUrl = null, systemI
   }
 
   const userContent = [];
-  if (hasReference) {
+  for (const url of refs) {
     userContent.push({
       type: 'image_url',
-      image_url: { url: referenceImageUrl },
+      image_url: { url },
     });
   }
   userContent.push({
@@ -290,7 +309,7 @@ async function generateImageOpenRouter(prompt, referenceImageUrl = null, systemI
 
     try {
       console.log(
-        `[imageGen] openrouter model=${model} modalities=${modalities.join(',')} ref=${hasReference}`
+        `[imageGen] openrouter model=${model} modalities=${modalities.join(',')} refs=${refs.length}`
       );
 
       const result = await createChatCompletion(model, messages, {
@@ -360,6 +379,7 @@ async function analyzeImageWithVision(userMessage, imageUrl, imageVisionContext 
 
     console.log(`[vision] model=${OPENROUTER_VISION_MODEL} userMsg=${String(userMessage).slice(0, 80)}`);
 
+    const imageUrls = normalizeReferenceUrls(imageUrl);
     const content = [
       {
         type: 'text',
@@ -367,10 +387,10 @@ async function analyzeImageWithVision(userMessage, imageUrl, imageVisionContext 
           ? `Сообщение пользователя: ${userMessage}`
           : 'Пользователь прислал фото еды. Проанализируй блюдо.',
       },
-      {
+      ...imageUrls.map((url) => ({
         type: 'image_url',
-        image_url: { url: imageUrl },
-      },
+        image_url: { url },
+      })),
     ];
 
     const { text: result } = await createChatCompletion(OPENROUTER_VISION_MODEL, [

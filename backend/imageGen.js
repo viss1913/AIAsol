@@ -112,13 +112,17 @@ async function runImageWithReference({
   history,
   metaTemplate,
   referenceUrl,
+  referenceUrls = null,
   systemInstruction = '',
 }) {
   const limit = getContextMessageLimit();
   let genPrompt;
   let system = systemInstruction;
+  const refs = Array.isArray(referenceUrls) && referenceUrls.length
+    ? referenceUrls.filter(Boolean)
+    : (referenceUrl ? [referenceUrl] : []);
 
-  if (usesMetaPrompt(command, { url: referenceUrl })) {
+  if (usesMetaPrompt(command, { url: refs[0] || null })) {
     const historySlice =
       command === '/correct_image_your'
         ? [{ role: 'user', content: userMessage }]
@@ -127,7 +131,8 @@ async function runImageWithReference({
     genPrompt = await prepareImageGenPrompt(metaTemplate, {
       userMessage,
       historySlice,
-      hasUserImage: Boolean(referenceUrl),
+      hasUserImage: refs.length > 0,
+      imageCount: refs.length,
       mode: command.replace('/', ''),
     });
   } else {
@@ -137,7 +142,7 @@ async function runImageWithReference({
     }
   }
 
-  return generateImageOpenRouter(genPrompt, referenceUrl, system);
+  return generateImageOpenRouter(genPrompt, refs, system);
 }
 
 async function runImagePipeline({
@@ -161,8 +166,12 @@ async function runImagePipeline({
     userMessage,
   });
 
+  const refUrls = Array.isArray(ref.urls) && ref.urls.length
+    ? ref.urls.filter(Boolean)
+    : (ref.url ? [ref.url] : []);
+
   console.log(
-    `[imageGen] cmd=${command} ref=${ref.source} refBytes=${imageByteLength(ref.url)} user=${history?.length ?? 0} msgs`
+    `[imageGen] cmd=${command} ref=${ref.source} refs=${refUrls.length} refBytes=${imageByteLength(ref.url)} user=${history?.length ?? 0} msgs`
   );
 
   if (
@@ -202,15 +211,19 @@ async function runImagePipeline({
     };
   }
 
+  const compressedRefs = [];
+  for (const url of refUrls) {
+    compressedRefs.push(await compressReferenceForApi(url));
+  }
+
   const generated = await runImageWithReference({
     botId,
     command,
     userMessage,
     history,
     metaTemplate,
-    referenceUrl: ref.url
-      ? await compressReferenceForApi(ref.url)
-      : null,
+    referenceUrl: compressedRefs[0] || null,
+    referenceUrls: compressedRefs,
     systemInstruction: command === '/create_image' && !ref.url ? metaTemplate : '',
   });
 

@@ -1,19 +1,23 @@
 # Multi-Bot API Documentation
 
 ## Base URL
+
 ```
 http://localhost:3000
 ```
 
 ## Authentication
+
 All `/api/admin/*` endpoints require HTTP Basic Authentication.
 
 **Headers:**
+
 ```
 Authorization: Basic <base64(username:password)>
 ```
 
 Credentials are set via environment variables:
+
 - `ADMIN_USER`
 - `ADMIN_PASS`
 
@@ -22,9 +26,11 @@ Credentials are set via environment variables:
 ## 🤖 Bot Management
 
 ### 1. Get All Bots
+
 **GET** `/api/admin/bots`
 
 **Response:**
+
 ```json
 [
   {
@@ -40,9 +46,11 @@ Credentials are set via environment variables:
 ---
 
 ### 2. Create New Bot
+
 **POST** `/api/admin/bots`
 
 **Request Body:**
+
 ```json
 {
   "name": "My New Bot",
@@ -52,6 +60,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -62,6 +71,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Bot will start automatically after creation
 - `name` is required
 - `apiKey` is generated automatically by backend on each bot creation
@@ -71,9 +81,11 @@ Credentials are set via environment variables:
 ---
 
 ### 3. Update Bot
+
 **PUT** `/api/admin/bots/:id`
 
 **Request Body:**
+
 ```json
 {
   "name": "Updated Name",           // Optional
@@ -85,6 +97,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -93,6 +106,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - If `isActive` is set to `false`, bot will stop
 - If `isActive` is set to `true` or token changes, Telegram bot will restart
 - Updating only `apiKey` does not restart Telegram polling
@@ -100,9 +114,11 @@ Credentials are set via environment variables:
 ---
 
 ### 4. Delete Bot
+
 **DELETE** `/api/admin/bots/:id`
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -111,6 +127,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Bot will be stopped before deletion
 - All related data (contexts, sessions, messages) will be deleted (CASCADE)
 
@@ -119,12 +136,15 @@ Credentials are set via environment variables:
 ## 🧠 Context Management (Per Bot)
 
 ### 5. Get All Contexts for Bot
+
 **GET** `/api/admin/context?botId=1`
 
 **Query Parameters:**
+
 - `botId` (required) - ID of the bot
 
 **Response:**
+
 ```json
 {
   "baseBrainContext": "You are a helpful assistant.",
@@ -146,9 +166,11 @@ Credentials are set via environment variables:
 ---
 
 ### 6. Create/Update Command Context
+
 **POST** `/api/admin/context`
 
 **Request Body:**
+
 ```json
 {
   "botId": 1,
@@ -160,6 +182,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -168,6 +191,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - `key` is the command name (e.g., `/start`)
 - Both `classifier` and `response` are optional, but at least one should be provided
 - If context exists, it will be updated; otherwise, it will be created
@@ -175,9 +199,11 @@ Credentials are set via environment variables:
 ---
 
 ### 7. Update Base Brain Context
+
 **PUT** `/api/admin/context/brain`
 
 **Request Body:**
+
 ```json
 {
   "botId": 1,
@@ -186,6 +212,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -194,15 +221,18 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - This updates the global system prompt for the bot
 - This is stored in the `bots` table, not in `ai_commands`
 
 ---
 
 ### 8. Delete Command Context
+
 **POST** `/api/admin/context/delete`
 
 **Request Body:**
+
 ```json
 {
   "botId": 1,
@@ -211,6 +241,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -223,9 +254,11 @@ Credentials are set via environment variables:
 ## 👥 User Management
 
 ### 9. Get All Users
+
 **GET** `/api/admin/users`
 
 **Response:**
+
 ```json
 [
   {
@@ -240,6 +273,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Users are global across all bots
 - `last_message_date` shows the most recent message from any bot
 - `user_context` contains personalized context for the user (can be null)
@@ -247,12 +281,15 @@ Credentials are set via environment variables:
 ---
 
 ### 10. Get User Messages
+
 **GET** `/api/admin/users/:id/messages`
 
 **Parameters:**
+
 - `:id` - User ID (Telegram user ID)
 
 **Response:**
+
 ```json
 [
   {
@@ -269,18 +306,22 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Returns all messages from all bots for this user
 - Messages are ordered by `created_at`
 
 ---
 
 ### 11. Send Message to User
+
 **POST** `/api/admin/users/:id/send`
 
 **Parameters:**
+
 - `:id` - User ID (Telegram user ID)
 
 **Request Body:**
+
 ```json
 {
   "botId": 1,
@@ -289,6 +330,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -297,15 +339,18 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Message will be sent via the specified bot
 - Message will be saved to the database as an assistant message
 
 ---
 
 ### 12. Broadcast Message to All Users
+
 **POST** `/api/admin/users/broadcast`
 
 **Request Body:**
+
 ```json
 {
   "botId": 1,
@@ -314,6 +359,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -324,6 +370,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Sends message to ALL users in the database
 - Uses the specified bot to send messages
 - Returns statistics about delivery
@@ -331,12 +378,15 @@ Credentials are set via environment variables:
 ---
 
 ### 13. Get User Context
+
 **GET** `/api/admin/users/:id/context`
 
 **Parameters:**
+
 - `:id` - User ID (Telegram user ID)
 
 **Response:**
+
 ```json
 {
   "userId": "123456789",
@@ -345,18 +395,22 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Returns empty string if user has no context set
 - User context is global across all bots
 
 ---
 
 ### 14. Set/Update User Context
+
 **PUT** `/api/admin/users/:id/context`
 
 **Parameters:**
+
 - `:id` - User ID (Telegram user ID)
 
 **Request Body:**
+
 ```json
 {
   "userContext": "Отдел Закупок. Руководитель - Баринов Виктор. Виктор поставил задачу Людмиле что нужно подготовить план закупок на 2-й квартал"
@@ -364,6 +418,7 @@ Credentials are set via environment variables:
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -372,6 +427,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Creates or updates user context
 - Context is added to AI prompts automatically
 - Context appears in the format: "Контекст пользователя: [userContext]"
@@ -380,12 +436,15 @@ Credentials are set via environment variables:
 ---
 
 ### 15. Delete User Context
+
 **DELETE** `/api/admin/users/:id/context`
 
 **Parameters:**
+
 - `:id` - User ID (Telegram user ID)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -394,6 +453,7 @@ Credentials are set via environment variables:
 ```
 
 **Notes:**
+
 - Sets user_context to NULL in database
 - AI will no longer receive user-specific context for this user
 
@@ -404,6 +464,7 @@ Credentials are set via environment variables:
 ### Tables
 
 #### `bots`
+
 ```sql
 CREATE TABLE bots (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -421,6 +482,7 @@ CREATE TABLE bots (
 ## Partner API (Per-Bot API Key)
 
 ### Authentication
+
 Public Partner API requests must include bot-specific header:
 
 ```
@@ -430,15 +492,18 @@ x-api-key: <apiKey for concrete bot>
 `apiKey` identifies the target bot automatically. `botId` is not required for `/chat`.
 
 ### Chat
+
 **POST** `/chat`
 
 **Headers:**
+
 ```
 x-api-key: partner-key-for-this-bot
 Content-Type: application/json
 ```
 
 **Request Body:**
+
 ```json
 {
   "userId": "123456",
@@ -447,6 +512,7 @@ Content-Type: application/json
 ```
 
 **Request Body (JSON + imageUrl):**
+
 ```json
 {
   "userId": "123456",
@@ -456,6 +522,7 @@ Content-Type: application/json
 ```
 
 **Request Body (JSON + imageBase64):**
+
 ```json
 {
   "userId": "123456",
@@ -466,6 +533,7 @@ Content-Type: application/json
 ```
 
 **Request Body (`multipart/form-data`):**
+
 - `userId` (string, required)
 - `message` (string, required)
 - `image` (file, optional)
@@ -474,6 +542,7 @@ If image is present (`image`/`imageUrl`/`imageBase64`), vision-analysis runs aut
 Image priority when several are passed: `image` -> `imageUrl` -> `imageBase64`.
 
 **Response:**
+
 ```json
 {
   "reply": "Hi! How can I help?",
@@ -486,13 +555,16 @@ Image priority when several are passed: `image` -> `imageUrl` -> `imageBase64`.
 ```
 
 **Errors:**
+
 - `401` when `x-api-key` is missing or invalid
 - `403` when bot exists but `is_active = false`
 
 ### Vision Context in Admin API
+
 To control image-analysis prompt per bot, set context key `image_vision` via admin endpoint:
 
 **POST** `/api/admin/context`
+
 ```json
 {
   "botId": 1,
@@ -503,10 +575,12 @@ To control image-analysis prompt per bot, set context key `image_vision` via adm
 ```
 
 Optional command-specific overrides are also supported:
+
 - `<command>:image_vision` (example: `/ccal:image_vision`)
 - fallback is `image_vision` key
 
 #### `ai_commands`
+
 ```sql
 CREATE TABLE ai_commands (
   command VARCHAR(255),
@@ -520,6 +594,7 @@ CREATE TABLE ai_commands (
 ```
 
 #### `users`
+
 ```sql
 CREATE TABLE users (
   user_id VARCHAR(255) PRIMARY KEY,
@@ -532,6 +607,7 @@ CREATE TABLE users (
 ```
 
 #### `sessions`
+
 ```sql
 CREATE TABLE sessions (
   user_id VARCHAR(255),
@@ -545,6 +621,7 @@ CREATE TABLE sessions (
 ```
 
 #### `messages`
+
 ```sql
 CREATE TABLE messages (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -583,7 +660,7 @@ fetch(`${API_BASE_URL}/bots`, {
 
 ### Important Notes for Frontend
 
-1. **All requests to `/api/admin/*` must include Authorization header**
+1. **All requests to `/api/admin/`* must include Authorization header**
 2. **All context-related endpoints require `botId` parameter**
 3. **Bot selection should be persistent in the UI** (e.g., in localStorage or state)
 4. **When switching bots, reload contexts for the selected bot**
@@ -642,6 +719,7 @@ console.log(await contexts.json());
 ### Common Error Responses
 
 **400 Bad Request**
+
 ```json
 {
   "error": "botId is required"
@@ -649,11 +727,13 @@ console.log(await contexts.json());
 ```
 
 **401 Unauthorized**
+
 ```
 Authentication required.
 ```
 
 **500 Internal Server Error**
+
 ```json
 {
   "error": "Internal server error"
@@ -688,6 +768,7 @@ If you have an existing single-bot setup:
 ### Frontend can't connect to backend
 
 **Check:**
+
 1. CORS is enabled: `app.use(cors())`
 2. Backend is running on correct port
 3. Authorization header is correctly formatted
@@ -696,6 +777,7 @@ If you have an existing single-bot setup:
 ### Bot not responding
 
 **Check:**
+
 1. Bot is active: `is_active = true` in database
 2. Bot token is valid
 3. Bot is started: check console logs for "Bot started: [name]"
@@ -704,7 +786,9 @@ If you have an existing single-bot setup:
 ### Database errors
 
 **Check:**
+
 1. MySQL is running
 2. Database credentials in `.env` are correct
 3. Database exists and tables are created
 4. Run `initDB()` to create/migrate tables
+

@@ -111,6 +111,20 @@ function matchesKeywords(text, keywords) {
   return keywords.some((kw) => lower.includes(kw));
 }
 
+function normalizeImageUrls(imagePayload) {
+  if (!imagePayload) return [];
+  const list = Array.isArray(imagePayload) ? imagePayload : [imagePayload];
+  return list.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function hasImagePayload(imagePayload) {
+  return normalizeImageUrls(imagePayload).length > 0;
+}
+
+function firstImageUrl(imagePayload) {
+  return normalizeImageUrls(imagePayload)[0] || null;
+}
+
 function wantsPriorUserImage(userMessage) {
   return matchesKeywords(userMessage, getReferenceKeywords());
 }
@@ -150,16 +164,17 @@ function resolveVisionImage({
   lastUserImage = null,
   lastGeneratedImage = null,
 }) {
-  if (imagePayload && String(imagePayload).trim()) {
-    return { url: String(imagePayload).trim(), source: 'upload' };
+  const uploads = normalizeImageUrls(imagePayload);
+  if (uploads.length > 0) {
+    return { url: uploads[0], urls: uploads, source: 'upload' };
   }
   if (lastGeneratedImage) {
-    return { url: lastGeneratedImage, source: 'session_bot' };
+    return { url: lastGeneratedImage, urls: [lastGeneratedImage], source: 'session_bot' };
   }
   if (lastUserImage) {
-    return { url: lastUserImage, source: 'session_user' };
+    return { url: lastUserImage, urls: [lastUserImage], source: 'session_user' };
   }
-  return { url: null, source: 'none' };
+  return { url: null, urls: [], source: 'none' };
 }
 
 function isTimestampExpired(imageAt, ttlMinutes) {
@@ -175,9 +190,10 @@ function imageByteLength(url) {
 }
 
 async function saveUserImage(userId, botId, imagePayload) {
-  if (!imagePayload || !String(imagePayload).trim()) return;
+  const first = firstImageUrl(imagePayload);
+  if (!first) return;
 
-  let payload = String(imagePayload).trim();
+  let payload = first;
   if (payload.startsWith('data:')) {
     try {
       payload = await compressImageDataUrl(payload, 'storage');
@@ -231,30 +247,30 @@ function resolveReferenceImage({
   userMessage = '',
 }) {
   const cmd = String(command || '').trim();
-  const upload = imagePayload && String(imagePayload).trim() ? String(imagePayload).trim() : null;
+  const uploads = normalizeImageUrls(imagePayload);
 
   if (cmd === '/correct_image_your') {
     if (lastGeneratedImage) {
-      return { url: lastGeneratedImage, source: 'session_bot' };
+      return { url: lastGeneratedImage, urls: [lastGeneratedImage], source: 'session_bot' };
     }
-    return { url: null, source: 'none' };
+    return { url: null, urls: [], source: 'none' };
   }
 
   if (cmd === '/correct_image_my') {
-    if (upload) return { url: upload, source: 'upload' };
-    if (lastUserImage) return { url: lastUserImage, source: 'session_user' };
-    return { url: null, source: 'none' };
+    if (uploads.length > 0) return { url: uploads[0], urls: uploads, source: 'upload' };
+    if (lastUserImage) return { url: lastUserImage, urls: [lastUserImage], source: 'session_user' };
+    return { url: null, urls: [], source: 'none' };
   }
 
   if (cmd === '/create_image') {
-    if (upload) return { url: upload, source: 'upload' };
+    if (uploads.length > 0) return { url: uploads[0], urls: uploads, source: 'upload' };
     if (wantsPriorUserImage(userMessage) && lastUserImage) {
-      return { url: lastUserImage, source: 'session_user' };
+      return { url: lastUserImage, urls: [lastUserImage], source: 'session_user' };
     }
-    return { url: null, source: 'none' };
+    return { url: null, urls: [], source: 'none' };
   }
 
-  return { url: null, source: 'none' };
+  return { url: null, urls: [], source: 'none' };
 }
 
 function usesMetaPrompt(command, ref) {
@@ -283,6 +299,9 @@ function isOcrCommand(command) {
 module.exports = {
   IMAGE_COMMANDS,
   OCR_COMMAND,
+  normalizeImageUrls,
+  hasImagePayload,
+  firstImageUrl,
   wantsPriorUserImage,
   wantsEditOfBotImage,
   wantsImageAnalysis,

@@ -12,6 +12,8 @@ const controlBot = controlToken ? new TelegramBot(controlToken) : null;
 const TELEGRAM_MAX_TEXT_CHARS = 3000;
 const TELEGRAM_MAX_CAPTION_CHARS = 900;
 const TYPING_REFRESH_MS = 4000;
+const IMAGE_ONLY_PLACEHOLDER = 'Пользователь отправил изображение.';
+const pendingMediaGroups = new Map();
 
 if (controlBot) {
   console.log(`✅ Control Bot initialized. Target Chat ID: ${controlChatId || 'MISSING'}`);
@@ -32,6 +34,22 @@ function buildTelegramConversationUserId(msg) {
   return `${chatId}:${fromId}`;
 }
 
+function getMediaGroupWaitMs() {
+  const parsed = parseInt(process.env.TELEGRAM_MEDIA_GROUP_WAIT_MS || '900', 10);
+  if (Number.isNaN(parsed) || parsed < 200) return 900;
+  return Math.min(parsed, 4000);
+}
+
+function getMediaGroupMaxImages() {
+  const parsed = parseInt(process.env.TELEGRAM_MEDIA_GROUP_MAX || '10', 10);
+  if (Number.isNaN(parsed) || parsed < 2) return 10;
+  return Math.min(parsed, 10);
+}
+
+function mediaGroupKey(botId, chatId, groupId) {
+  return `${botId}:${chatId}:${groupId}`;
+}
+
 function extractTelegramImageFileId(msg) {
   if (Array.isArray(msg.photo) && msg.photo.length > 0) {
     const biggest = msg.photo[msg.photo.length - 1];
@@ -48,6 +66,175 @@ function extractTelegramImageFileId(msg) {
   }
 
   return null;
+}
+
+function extractTelegramUserText(msg, imageFileId) {
+  const messageText = typeof msg.text === 'string' && msg.text.trim()
+    ? msg.text.trim()
+    : '';
+  const messageCaption = typeof msg.caption === 'string' && msg.caption.trim()
+    ? msg.caption.trim()
+    : '';
+  if (messageText || messageCaption) {
+    return messageText || messageCaption;
+  }
+  return imageFileId ? IMAGE_ONLY_PLACEHOLDER : '';
+}
+
+function collectAlbumUserMessage(items) {
+  const captions = [];
+  for (const item of items) {
+    const text = String(item.userMessage || '').trim();
+    if (text && text !== IMAGE_ONLY_PLACEHOLDER && !captions.includes(text)) {
+      captions.push(text);
+    }
+  }
+  if (captions.length) return captions.join('\n');
+  if (items.some((item) => item.imageFileId)) return IMAGE_ONLY_PLACEHOLDER;
+  return '';
+}
+
+async function processTelegramTurn({
+  bot,
+  botId,
+  chatId,
+  conversationUserId,
+  userName,
+  userHandle,
+  userMessage,
+  imagePayload,
+  imageFileId,
+}) {
+  console.log(
+    `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ${userName} (${userHandle}): ${userMessage}`
+  );
+
+  if (!userMessage) {
+    await bot.sendMessage(chatId, 'Пришли текст или изображение, и я помогу.');
+    return;
+  }
+
+  await ensureUser(conversationUserId, userName, userHandle);
+
+  if (userMessage === '/reset') {
+    await pool.query('DELETE FROM sessions WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
+    await pool.query('DELETE FROM messages WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
+    await deleteUserContext(conversationUserId);
+    await seedSessionAfterReset(conversationUserId, botId);
+    await touchUser(conversationUserId);
+
+    console.log(
+      `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed; next message → /start`
+    );
+    bot.sendMessage(chatId, '🔄 История диалога и персональный контекст очищены. Чем могу помочь?');
+    if (controlBot && controlChatId) {
+      controlBot.sendMessage(controlChatId, `🔄 Сброс (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId})`);
+    }
+    return;
+  }
+
+  await touchUser(conversationUserId);
+  await addMessage(conversationUserId, 'user', userMessage, botId);
+
+  const chatAction = pickTelegramChatAction({ imageFileId, userMessage });
+  const result = await runWithTelegramChatAction(bot, chatId, chatAction, () =>
+    processUserMessage({
+      botId,
+      userId: conversationUserId,
+      userMessage,
+      imagePayload,
+    })
+  );
+
+  console.log(
+    `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Command: ${result.newCommand} type: ${result.type}`
+  );
+
+  if (controlBot && controlChatId) {
+    const cleanChatId = controlChatId.trim();
+    const photoHint = Array.isArray(imagePayload) && imagePayload.length > 1
+      ? ` 🖼×${imagePayload.length}`
+      : (result.type === 'image' ? ' 🖼' : '');
+    const notifyText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (chat:${chatId}, user:${conversationUserId})\n💬 "${userMessage}"\n🔄 → ${result.newCommand}${photoHint}\n`;
+
+    controlBot
+      .sendMessage(cleanChatId, notifyText)
+      .then(() => console.log(`[Control Bot] ✅ Notification sent to ${cleanChatId}`))
+      .catch((err) => console.error(`[Control Bot] ❌ Failed to send notification: ${err.message}`));
+  }
+
+  await addMessage(conversationUserId, 'assistant', result.reply, botId);
+  await touchUser(conversationUserId);
+
+  if (result.type === 'image' && result.imageDataUrl) {
+    await sendTelegramPhotoWithReply(bot, chatId, result.imageDataUrl, result.reply);
+  } else {
+    await sendTelegramText(bot, chatId, result.reply);
+  }
+}
+
+async function flushTelegramMediaGroup(bot, botId, items) {
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  const first = items[0];
+  const chatId = first.chatId;
+  const conversationUserId = first.conversationUserId;
+  const userName = first.userName;
+  const userHandle = first.userHandle;
+  const userMessage = collectAlbumUserMessage(items);
+  const maxImages = getMediaGroupMaxImages();
+  const limited = items.slice(0, maxImages);
+
+  const imagePayload = [];
+  for (const item of limited) {
+    if (!item.imageFileId) continue;
+    try {
+      const dataUrl = await buildTelegramImageDataUrl(bot, item.msg, item.imageFileId);
+      imagePayload.push(dataUrl);
+    } catch (imgErr) {
+      console.error(
+        `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Album image download failed:`,
+        imgErr.message || imgErr
+      );
+    }
+  }
+
+  console.log(
+    `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] media_group photos=${imagePayload.length}`
+  );
+
+  try {
+    await processTelegramTurn({
+      bot,
+      botId,
+      chatId,
+      conversationUserId,
+      userName,
+      userHandle,
+      userMessage,
+      imagePayload: imagePayload.length > 1 ? imagePayload : (imagePayload[0] || null),
+      imageFileId: imagePayload[0] ? 'album' : null,
+    });
+  } catch (error) {
+    console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Error:`, error);
+    bot.sendMessage(chatId, 'Произошла ошибка, попробуйте позже.');
+    if (controlBot && controlChatId) {
+      controlBot.sendMessage(controlChatId, `❌ Ошибка (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId}): ${error.message}`);
+    }
+  }
+}
+
+async function downloadSingleTelegramImage(bot, botId, chatId, conversationUserId, msg, imageFileId) {
+  if (!imageFileId) return null;
+  try {
+    return await buildTelegramImageDataUrl(bot, msg, imageFileId);
+  } catch (imgErr) {
+    console.error(
+      `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Image download failed:`,
+      imgErr.message || imgErr
+    );
+    return null;
+  }
 }
 
 function resolveTelegramImageMimeType(msg) {
@@ -229,96 +416,58 @@ function startBot(botRow) {
       const chatId = msg.chat.id;
       const conversationUserId = buildTelegramConversationUserId(msg);
       const imageFileId = extractTelegramImageFileId(msg);
-      const messageText = typeof msg.text === 'string' && msg.text.trim()
-        ? msg.text.trim()
-        : '';
-      const messageCaption = typeof msg.caption === 'string' && msg.caption.trim()
-        ? msg.caption.trim()
-        : '';
-      const userMessage = messageText || messageCaption
-        ? (messageText || messageCaption)
-        : imageFileId
-          ? 'Пользователь отправил изображение.'
-          : '';
+      const userMessage = extractTelegramUserText(msg, imageFileId);
       const userName = msg.from.first_name || 'Пользователь';
       const userHandle = msg.from.username ? `@${msg.from.username}` : null;
+      const groupId = msg.media_group_id ? String(msg.media_group_id) : '';
 
-      console.log(
-        `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ${userName} (${userHandle}): ${userMessage}`
-      );
+      if (groupId && imageFileId) {
+        const key = mediaGroupKey(botId, chatId, groupId);
+        let pending = pendingMediaGroups.get(key);
+        if (!pending) {
+          pending = { items: [], timer: null };
+          pendingMediaGroups.set(key, pending);
+        }
+        pending.items.push({
+          msg,
+          imageFileId,
+          userMessage,
+          userName,
+          userHandle,
+          conversationUserId,
+          chatId,
+        });
+        pending.items.sort((a, b) => (a.msg.message_id || 0) - (b.msg.message_id || 0));
+        if (pending.timer) clearTimeout(pending.timer);
+        pending.timer = setTimeout(() => {
+          pendingMediaGroups.delete(key);
+          flushTelegramMediaGroup(bot, botId, pending.items).catch((error) => {
+            console.error(`[Bot #${botId}] media_group flush error:`, error);
+          });
+        }, getMediaGroupWaitMs());
+        return;
+      }
 
       try {
-        if (!userMessage) {
-          await bot.sendMessage(chatId, 'Пришли текст или изображение, и я помогу.');
-          return;
-        }
-
-        await ensureUser(conversationUserId, userName, userHandle);
-
-        if (userMessage === '/reset') {
-          await pool.query('DELETE FROM sessions WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
-          await pool.query('DELETE FROM messages WHERE user_id = ? AND bot_id = ?', [conversationUserId, botId]);
-          await deleteUserContext(conversationUserId);
-          await seedSessionAfterReset(conversationUserId, botId);
-          await touchUser(conversationUserId);
-
-          console.log(
-            `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] ✅ Reset completed; next message → /start`
-          );
-          bot.sendMessage(chatId, '🔄 История диалога и персональный контекст очищены. Чем могу помочь?');
-          if (controlBot && controlChatId) {
-            controlBot.sendMessage(controlChatId, `🔄 Сброс (Bot #${botId}): ${userName} (chat:${chatId}, user:${conversationUserId})`);
-          }
-          return;
-        }
-
-        await touchUser(conversationUserId);
-        await addMessage(conversationUserId, 'user', userMessage, botId);
-
-        let imagePayload = null;
-        if (imageFileId) {
-          try {
-            imagePayload = await buildTelegramImageDataUrl(bot, msg, imageFileId);
-          } catch (imgErr) {
-            console.error(
-              `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Image download failed:`,
-              imgErr.message || imgErr
-            );
-          }
-        }
-
-        const chatAction = pickTelegramChatAction({ imageFileId, userMessage });
-        const result = await runWithTelegramChatAction(bot, chatId, chatAction, () =>
-          processUserMessage({
-            botId,
-            userId: conversationUserId,
-            userMessage,
-            imagePayload,
-          })
+        const imagePayload = await downloadSingleTelegramImage(
+          bot,
+          botId,
+          chatId,
+          conversationUserId,
+          msg,
+          imageFileId
         );
-
-        console.log(
-          `[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Command: ${result.newCommand} type: ${result.type}`
-        );
-
-        if (controlBot && controlChatId) {
-          const cleanChatId = controlChatId.trim();
-          const notifyText = `\n📩 (Bot #${botId}) Новое сообщение:\n👤 ${userName} (chat:${chatId}, user:${conversationUserId})\n💬 "${userMessage}"\n🔄 → ${result.newCommand}${result.type === 'image' ? ' 🖼' : ''}\n`;
-
-          controlBot
-            .sendMessage(cleanChatId, notifyText)
-            .then(() => console.log(`[Control Bot] ✅ Notification sent to ${cleanChatId}`))
-            .catch((err) => console.error(`[Control Bot] ❌ Failed to send notification: ${err.message}`));
-        }
-
-        await addMessage(conversationUserId, 'assistant', result.reply, botId);
-        await touchUser(conversationUserId);
-
-        if (result.type === 'image' && result.imageDataUrl) {
-          await sendTelegramPhotoWithReply(bot, chatId, result.imageDataUrl, result.reply);
-        } else {
-          await sendTelegramText(bot, chatId, result.reply);
-        }
+        await processTelegramTurn({
+          bot,
+          botId,
+          chatId,
+          conversationUserId,
+          userName,
+          userHandle,
+          userMessage,
+          imagePayload,
+          imageFileId,
+        });
       } catch (error) {
         console.error(`[Bot #${botId}] [chat:${chatId}] [user:${conversationUserId}] Error:`, error);
         bot.sendMessage(chatId, 'Произошла ошибка, попробуйте позже.');
@@ -340,6 +489,13 @@ async function stopBot(botId) {
   const bot = activeBots.get(botId);
   if (bot) {
     console.log(`🛑 Stopping bot #${botId}...`);
+    const prefix = `${botId}:`;
+    for (const [key, pending] of pendingMediaGroups.entries()) {
+      if (key.startsWith(prefix)) {
+        if (pending.timer) clearTimeout(pending.timer);
+        pendingMediaGroups.delete(key);
+      }
+    }
     await bot.stopPolling();
     activeBots.delete(botId);
     return true;
